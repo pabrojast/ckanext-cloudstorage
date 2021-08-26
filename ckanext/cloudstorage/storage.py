@@ -167,6 +167,7 @@ class ResourceCloudStorage(CloudStorage):
             self.file_upload = upload_field_storage.file
             resource['url'] = self.filename
             resource['url_type'] = 'upload'
+            resource['last_modified'] = datetime.utcnow()
         elif multipart_name and self.can_use_advanced_aws:
             # This means that file was successfully uploaded and stored
             # at cloud.
