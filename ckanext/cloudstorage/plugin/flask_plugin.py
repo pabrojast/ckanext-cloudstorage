@@ -11,9 +11,13 @@ class MixinPlugin(p.SingletonPlugin):
     # IBlueprint
 
     def get_blueprint(self):
-        return views.get_blueprints()
+        return [
+            views.resource_blueprint
+        ]
 
     # IClick
 
     def get_commands(self):
         return cli.get_commands()
+
+    

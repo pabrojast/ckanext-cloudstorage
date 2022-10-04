@@ -22,6 +22,9 @@ from libcloud.storage.providers import get_driver
 from werkzeug.datastructures import FileStorage as FlaskFileStorage
 ALLOWED_UPLOAD_TYPES = (cgi.FieldStorage, FlaskFileStorage)
 
+import logging
+
+log = logging.getLogger(__name__)
 
 def _get_underlying_file(wrapper):
     if isinstance(wrapper, FlaskFileStorage):
@@ -154,6 +157,15 @@ class CloudStorage(object):
             config.get('ckanext.cloudstorage.use_secure_urls', False)
         )
 
+
+    @property
+    def connection_link(self):
+        """
+        The connection link to the container
+        """
+        return config['ckanext.cloudstorage.connection_link']
+
+
     @property
     def aws_use_boto3_sessions(self):
         """
@@ -245,10 +257,11 @@ class ResourceCloudStorage(CloudStorage):
 
         # Check to see if a file has been provided
         if isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)):
-            self.filename = munge.munge_filename(upload_field_storage.filename)
-            self.file_upload = _get_underlying_file(upload_field_storage)
-            resource['url'] = self.filename
-            resource['url_type'] = 'upload'
+            if len(upload_field_storage.filename):
+                self.filename = munge.munge_filename(upload_field_storage.filename)
+                self.file_upload = _get_underlying_file(upload_field_storage)
+                resource['url'] = self.filename
+                resource['url_type'] = 'upload'
         elif multipart_name and self.can_use_advanced_aws:
             # This means that file was successfully uploaded and stored
             # at cloud.
@@ -295,32 +308,24 @@ class ResourceCloudStorage(CloudStorage):
         :param max_size: Ignored.
         """
         if self.filename:
-
             if self.can_use_advanced_azure:
-                from azure.storage import blob as azure_blob
-                from azure.storage.blob.models import ContentSettings
+                from azure.storage.blob import ContentSettings  # type: ignore
+                from azure.storage.blob import BlobServiceClient
 
-                blob_service = azure_blob.BlockBlobService(
-                    self.driver_options['key'],
-                    self.driver_options['secret']
-                )
-                content_settings = None
+                svc_client = BlobServiceClient.from_connection_string(self.connection_link)
+                container_client = svc_client.get_container_client(self.container_name)
+                blob_client = container_client.get_blob_client(self.path_from_filename(
+                                                                    id,
+                                                                    self.filename
+                                                                ))
+                stream = self.file_upload
+                blob_client.upload_blob(stream, overwrite=True)
                 if self.guess_mimetype:
                     content_type, _ = mimetypes.guess_type(self.filename)
                     if content_type:
-                        content_settings = ContentSettings(
-                            content_type=content_type
-                        )
+                        blob_client.set_http_headers(ContentSettings(content_type=mimetypes))
+                return stream.tell()
 
-                return blob_service.create_blob_from_stream(
-                    container_name=self.container_name,
-                    blob_name=self.path_from_filename(
-                        id,
-                        self.filename
-                    ),
-                    stream=self.file_upload,
-                    content_settings=content_settings
-                )
             else:
                 # If it's temporary file, we'd better convert it
                 # into FileIO. Otherwise libcloud will iterate
@@ -382,23 +387,34 @@ class ResourceCloudStorage(CloudStorage):
         # If advanced azure features are enabled, generate a temporary
         # shared access link instead of simply redirecting to the file.
         if self.can_use_advanced_azure and self.use_secure_urls:
-            from azure.storage import blob as azure_blob
+            from azure.storage.blob import BlobClient, BlobSasPermissions, BlobServiceClient, generate_blob_sas
+            
+            svc_client = BlobServiceClient.from_connection_string(self.connection_link)
+            container_client = svc_client.get_container_client(self.container_name)
+            blob_client = container_client.get_blob_client(path)
+            permissions = BlobSasPermissions(read=True)
+            token_expires = datetime.utcnow() + timedelta(hours=1)
+            sas_token = generate_blob_sas(account_name=blob_client.account_name,
+                                      account_key=blob_client.credential.account_key,
+                                      container_name=blob_client.container_name,
+                                      blob_name=blob_client.blob_name,
+                                      permission=permissions,
+                                      expiry=token_expires)
 
-            blob_service = azure_blob.BlockBlobService(
-                self.driver_options['key'],
-                self.driver_options['secret']
-            )
+            blob_client = BlobClient(svc_client.url,
+                                    container_name=blob_client.container_name,
+                                    blob_name=blob_client.blob_name,
+                                    credential=sas_token)
+            
+            # The url from blob_client above actually generate the url for download
+            # but the file path is mixed with the filename e.g
+            # we want to download `example.csv` but the url generate this
+            # `resource12565-316r3example.csv` which is mung of the filename with its path
+            # hence the below method enable the actual download of the file with its name
+            url = f'https://{blob_client.account_name}.blob.core.windows.net/{self.container_name}/{path}?{sas_token}'
+            
+            return url
 
-            return blob_service.make_blob_url(
-                container_name=self.container_name,
-                blob_name=path,
-                sas_token=blob_service.generate_blob_shared_access_signature(
-                    container_name=self.container_name,
-                    blob_name=path,
-                    expiry=datetime.utcnow() + timedelta(hours=1),
-                    permission=azure_blob.BlobPermissions.READ
-                )
-            )
         elif self.can_use_advanced_aws and self.use_secure_urls:
 
             from boto.s3.connection import S3Connection
