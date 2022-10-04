@@ -163,7 +163,10 @@ class CloudStorage(object):
         """
         The connection link to the container
         """
-        return config['ckanext.cloudstorage.connection_link']
+        return "AccountName={};AccountKey={}".format(
+            self.driver_options['key'],
+            self.driver_options['secret']
+        )
 
 
     @property
@@ -262,6 +265,8 @@ class ResourceCloudStorage(CloudStorage):
                 self.file_upload = _get_underlying_file(upload_field_storage)
                 resource['url'] = self.filename
                 resource['url_type'] = 'upload'
+            else:
+                resource['url_type'] = ''
         elif multipart_name and self.can_use_advanced_aws:
             # This means that file was successfully uploaded and stored
             # at cloud.
@@ -279,6 +284,9 @@ class ResourceCloudStorage(CloudStorage):
             )
 
             self.old_filename = old_resource.url
+            resource['url_type'] = ''
+
+        if upload_field_storage is None and resource.get('url_type') != 'upload':
             resource['url_type'] = ''
 
     def path_from_filename(self, rid, filename):
@@ -411,7 +419,12 @@ class ResourceCloudStorage(CloudStorage):
             # we want to download `example.csv` but the url generate this
             # `resource12565-316r3example.csv` which is mung of the filename with its path
             # hence the below method enable the actual download of the file with its name
-            url = f'https://{blob_client.account_name}.blob.core.windows.net/{self.container_name}/{path}?{sas_token}'
+            url = 'https://{}.blob.core.windows.net/{}/{}?{}'.format(
+                blob_client.account_name,
+                self.container_name,
+                path,
+                sas_token
+            )
             
             return url
 
