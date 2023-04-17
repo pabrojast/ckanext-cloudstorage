@@ -259,7 +259,7 @@ def _list_missing_uploads():
         if url not in upload_urls:
             resource_ids_missing_uploads.append(id)
 
-    if len(resource_ids_missing_uploads):
+    if resource_ids_missing_uploads:
         click.echo(resource_ids_missing_uploads)
 
     click.echo(u"Found {} resource(s) with missing uploads."
