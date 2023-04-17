@@ -241,10 +241,7 @@ def _remove_unlinked_uploads():
 def _list_missing_uploads():
     cs = CloudStorage()
 
-    upload_urls = []
-    uploads = cs.container.list_objects()
-    for upload in uploads:
-        upload_urls.append(upload.name)
+    upload_urls = set(u.name for u in cs.container.list_objects())
 
     resource_ids_and_filenames = model.Session.query(
                                     model.Resource.id,
