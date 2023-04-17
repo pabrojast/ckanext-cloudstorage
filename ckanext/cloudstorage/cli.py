@@ -31,7 +31,6 @@ Commands:
     - list-unlinked-uploads     Lists uploads in the storage container that do not match to any resources.
     - remove-unlinked-uploads   Permanently deletes uploads from the storage container that do not match to any resources.
     - list-missing-uploads      Lists resources IDs that are missing uploads in the storage container.
-    - fix-missing-uploads       Tries to re-upload resource files that are missing uploads in the storage container.
 
 Usage:
     cloudstorage fix-cors <domains>... [--c=<config>]
@@ -40,7 +39,6 @@ Usage:
     cloudstorage list-unlinked-uploads [--c=<config>]
     cloudstorage remove-unlinked-uploads [--c=<config>]
     cloudstorage list-missing-uploads [--c=<config>]
-    cloudstorage fix-missing-uploads [--c=<config>]
 
 Options:
     -c=<config>       The CKAN configuration file.
@@ -71,8 +69,8 @@ class PasterCommand(CkanCommand):
             _list_unlinked_uploads()
         elif args['remove-unlinked-uploads']:
             _remove_unlinked_uploads()
-        elif args['fix-missing-uploads']:
-            _fix_missing_uploads()
+        elif args['list-missing-uploads']:
+            _list_missing_uploads()
 
 
 def _migrate(args):
@@ -181,7 +179,7 @@ def _fix_cors(args):
         )
 
 
-def _get_unlinked_uploads():
+def _get_unlinked_uploads(return_objects = False):
     cs = CloudStorage()
 
     resource_urls = []
@@ -197,15 +195,13 @@ def _get_unlinked_uploads():
                                 id,
                                 munge_filename(filename)))
 
-    uploads = cs.driver.list_container_objects(cs.container)
+    uploads = cs.container.list_objects()
 
     uploads_missing_resources = []
     for upload in uploads:
-        if not upload.name:
-            continue
-
         if upload.name not in resource_urls:
-            uploads_missing_resources.append(upload.name)
+            uploads_missing_resources.append(
+                upload if return_objects else upload.name)
 
     return uploads_missing_resources
 
@@ -216,32 +212,44 @@ def _list_unlinked_uploads():
     if len(uploads_missing_resources):
         click.echo(uploads_missing_resources)
 
-    click.echo("Found {} upload(s) with missing or deleted resources."
+    click.echo(u"Found {} upload(s) with missing or deleted resources."
                 .format(len(uploads_missing_resources)))
 
 
 def _remove_unlinked_uploads():
     cs = CloudStorage()
-    uploads_missing_resources = _get_unlinked_uploads()
-    #TODO: loop through uploads_missing_resources
-    # and attempt to delete the files from storage container??
+
+    uploads_missing_resources = _get_unlinked_uploads(return_objects = True)
+
+    num_success = 0
+    num_failures = 0
+    for upload in uploads_missing_resources:
+        if cs.container.delete_object(upload):
+            click.echo(u"Deleted {}".format(upload.name))
+            num_success += 1
+        else:
+            click.echo(u"Failed to delete {}".format(upload.name))
+            num_failures += 1
+
+    if num_success:
+        click.echo(u"Deleted {} upload(s).".format(num_success))
+
+    if num_failures:
+        click.echo(u"Failed to delete {} upload(s).".format(num_failures))
 
 
-def _get_missing_uploads():
+def _list_missing_uploads():
     cs = CloudStorage()
 
     upload_urls = []
-    uploads = cs.driver.list_container_objects(cs.container)
+    uploads = cs.container.list_objects()
     for upload in uploads:
-        if not upload.name:
-            continue
-
         upload_urls.append(upload.name)
 
     resource_ids_and_filenames = model.Session.query(
                                     model.Resource.id,
                                     model.Resource.url) \
-                                 .filter(model.Resource.url_type == 'upload') \
+                                 .filter(model.Resource.url_type == u'upload') \
                                  .all()
 
     resource_ids_missing_uploads = []
@@ -254,24 +262,11 @@ def _get_missing_uploads():
         if url not in upload_urls:
             resource_ids_missing_uploads.append(id)
 
-    return resource_ids_missing_uploads
-
-
-def _list_missing_uploads():
-    resource_ids_missing_uploads = _get_missing_uploads()
-
     if len(resource_ids_missing_uploads):
         click.echo(resource_ids_missing_uploads)
 
-    click.echo("Found {} resource(s) with missing uploads."
+    click.echo(u"Found {} resource(s) with missing uploads."
                 .format(len(resource_ids_missing_uploads)))
-
-
-def _fix_missing_uploads():
-    cs = CloudStorage()
-    resource_ids_missing_uploads = _get_missing_uploads()
-    #TODO: loop through resource_ids_missing_uploads
-    # and attempt to upload the files to the storage container??
 
 
 def _initdb():
