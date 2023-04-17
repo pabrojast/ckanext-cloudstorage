@@ -209,7 +209,7 @@ def _get_unlinked_uploads(return_objects = False):
 def _list_unlinked_uploads():
     uploads_missing_resources = _get_unlinked_uploads()
 
-    if len(uploads_missing_resources):
+    if uploads_missing_resources:
         click.echo(uploads_missing_resources)
 
     click.echo(u"Found {} upload(s) with missing or deleted resources."
