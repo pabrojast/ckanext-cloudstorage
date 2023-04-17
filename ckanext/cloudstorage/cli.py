@@ -4,9 +4,12 @@ import os
 import os.path
 import cgi
 import tempfile
+import click
 
 from docopt import docopt
 from ckan.lib.cli import CkanCommand
+from ckan.lib.munge import munge_filename
+from ckan import model
 
 from ckanapi import LocalCKAN
 from ckanext.cloudstorage.storage import (
@@ -22,14 +25,18 @@ from ckan.logic import NotFound
 USAGE = """ckanext-cloudstorage
 
 Commands:
-    - fix-cors       Update CORS rules where possible.
-    - migrate        Upload local storage to the remote.
-    - initdb         Reinitalize database tables.
+    - fix-cors                  Update CORS rules where possible.
+    - migrate                   Upload local storage to the remote.
+    - initdb                    Reinitalize database tables.
+    - list-unlinked-uploads     Lists uploads in the storage container that do not match to any resources.
+    - list-missing-uploads      Lists resources IDs that are missing uploads in the storage container.
 
 Usage:
     cloudstorage fix-cors <domains>... [--c=<config>]
     cloudstorage migrate <path_to_storage> [<resource_id>] [--c=<config>]
     cloudstorage initdb [--c=<config>]
+    cloudstorage list-unlinked-uploads [--c=<config>]
+    cloudstorage list-missing-uploads [--c=<config>]
 
 Options:
     -c=<config>       The CKAN configuration file.
@@ -56,6 +63,10 @@ class PasterCommand(CkanCommand):
             _migrate(args)
         elif args['initdb']:
             _initdb()
+        elif args['list-unlinked-uploads']:
+            _list_unlinked_uploads()
+        elif args['list-missing-uploads']:
+            _list_missing_uploads()
 
 
 def _migrate(args):
@@ -162,6 +173,73 @@ def _fix_cors(args):
                 driver_name=cs.driver_name
             )
         )
+
+
+def _list_unlinked_uploads():
+    cs = CloudStorage()
+
+    resource_urls = []
+    resource_ids_and_filenames = model.Session.query(
+                                    model.Resource.id,
+                                    model.Resource.url) \
+                                 .filter(model.Resource.url_type == 'upload') \
+                                 .all()
+
+    for id, filename in resource_ids_and_filenames:
+        resource_urls.append(os.path.join(
+                                'resources',
+                                id,
+                                munge_filename(filename)))
+
+    uploads = cs.driver.list_container_objects(cs.container)
+
+    uploads_missing_resources = []
+    for upload in uploads:
+        if not upload.name:
+            continue
+
+        if upload.name not in resource_urls:
+            uploads_missing_resources.append(upload.name)
+
+    if len(uploads_missing_resources):
+        click.echo(uploads_missing_resources)
+
+    click.echo("Found {} upload(s) with missing or deleted resources."
+                .format(len(uploads_missing_resources)))
+
+
+def _list_missing_uploads():
+    cs = CloudStorage()
+
+    upload_urls = []
+    uploads = cs.driver.list_container_objects(cs.container)
+    for upload in uploads:
+        if not upload.name:
+            continue
+
+        upload_urls.append(upload.name)
+
+    resource_ids_and_filenames = model.Session.query(
+                                    model.Resource.id,
+                                    model.Resource.url) \
+                                 .filter(model.Resource.url_type == 'upload') \
+                                 .all()
+
+    resource_ids_missing_uploads = []
+    for id, filename in resource_ids_and_filenames:
+        url = os.path.join(
+                'resources',
+                id,
+                munge_filename(filename))
+
+        if url not in upload_urls:
+            resource_ids_missing_uploads.append(id)
+
+    if len(resource_ids_missing_uploads):
+        click.echo(resource_ids_missing_uploads)
+
+    click.echo("Found {} resource(s) with missing uploads."
+                .format(len(resource_ids_missing_uploads)))
 
 
 def _initdb():
