@@ -182,18 +182,16 @@ def _fix_cors(args):
 def _get_unlinked_uploads(return_objects = False):
     cs = CloudStorage()
 
-    resource_urls = []
-    resource_ids_and_filenames = model.Session.query(
-                                    model.Resource.id,
-                                    model.Resource.url) \
-                                 .filter(model.Resource.url_type == 'upload') \
-                                 .all()
-
-    for id, filename in resource_ids_and_filenames:
-        resource_urls.append(os.path.join(
-                                'resources',
-                                id,
-                                munge_filename(filename)))
+    resource_urls = (os.path.join(
+                        'resources',
+                        id,
+                        munge_filename(filename))
+                    for id, filename in
+                    model.Session.query(
+                        model.Resource.id,
+                        model.Resource.url) \
+                        .filter(model.Resource.url_type == 'upload') \
+                        .all())
 
     uploads = cs.container.list_objects()
 
