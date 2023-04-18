@@ -182,7 +182,7 @@ def _fix_cors(args):
 def _get_unlinked_uploads(return_objects = False):
     cs = CloudStorage()
 
-    resource_urls = (os.path.join(
+    resource_urls = set(os.path.join(
                         'resources',
                         id,
                         munge_filename(filename))
