@@ -340,7 +340,7 @@ def _list_missing_uploads(output_path):
 
         if url not in upload_urls:
             resources_missing_uploads.append({
-                u'resource_idid': id,
+                u'resource_id': id,
                 u'resource_filename': filename,
                 u'package_id': package_id,
                 u'created': h.render_datetime(created),
