@@ -34,7 +34,7 @@ Commands:
     - list-unlinked-uploads     Lists uploads in the storage container that do not match to any resources.
     - remove-unlinked-uploads   Permanently deletes uploads from the storage container that do not match to any resources.
     - list-missing-uploads      Lists resources IDs that are missing uploads in the storage container.
-    - list-uploads              Lists uploads in the storage container that do match to a resource.
+    - list-linked-uploads       Lists uploads in the storage container that do match to a resource.
 
 Usage:
     cloudstorage fix-cors <domains>... [--c=<config>]
@@ -43,7 +43,7 @@ Usage:
     cloudstorage list-unlinked-uploads [--o=<output>] [--c=<config>]
     cloudstorage remove-unlinked-uploads [--c=<config>]
     cloudstorage list-missing-uploads [--o=<output>] [--c=<config>]
-    cloudstorage list-uploads [--o=<output>] [--c=<config>]
+    cloudstorage list-linked-uploads [--o=<output>] [--c=<config>]
 
 Options:
     -c=<config>       The CKAN configuration file.
@@ -82,8 +82,8 @@ class PasterCommand(CkanCommand):
             _remove_unlinked_uploads()
         elif args['list-missing-uploads']:
             _list_missing_uploads(self.options.output)
-        elif args['list-uploads']:
-            _list_uploads(self.options.output)
+        elif args['list-linked-uploads']:
+            _list_linked_uploads(self.options.output)
 
 
 def _migrate(args):
@@ -204,7 +204,11 @@ def _get_uploads(get_linked = True, return_upload_objects_only = False):
                     model.Session.query(
                         model.Resource.id,
                         model.Resource.url) \
-                        .filter(model.Resource.url_type == u'upload') \
+                        .join(model.Package,
+                              model.Resource.package_id == model.Package.id) \
+                        .filter(_and_(model.Resource.url_type == u'upload',
+                                      model.Resource.state == model.core.State.ACTIVE,
+                                      model.Package.state == model.core.State.ACTIVE)) \
                         .all())
 
     uploads = cs.container.list_objects()
@@ -229,10 +233,12 @@ def _get_uploads(get_linked = True, return_upload_objects_only = False):
                                     model.Resource.package_id,
                                     model.Resource.created,
                                     model.Resource.last_modified,
-                                    model.Package.owner_org) \
+                                    model.Package.owner_org,
+                                    model.Package.state,
+                                    model.Resource.state) \
                                     .join(model.Package, model.Resource.package_id == model.Package.id) \
                                     .filter(_and_(model.Resource.url_type == u'upload',
-                                                model.Resource.id == resource_id)) \
+                                                  model.Resource.id == resource_id)) \
                                     .first()
             parsed_uploads.append({
                 u'resource_id': resource_fields[0] if resource_fields else None,
@@ -242,7 +248,9 @@ def _get_uploads(get_linked = True, return_upload_objects_only = False):
                 u'last_modified': h.render_datetime(resource_fields[4]) if resource_fields else None,
                 u'organization_id': resource_fields[5] if resource_fields else None,
                 u'upload_url': upload.name,
-                u'upload_size': upload.size / 1000.0})
+                u'upload_size': upload.size / 1000.0,
+                u'package_state': resource_fields[6] if resource_fields else None,
+                u'resource_state': resource_fields[7] if resource_fields else None})
             total_space_used += upload.size / 1000.0
 
     return total_space_used, parsed_uploads
@@ -272,7 +280,9 @@ def _write_uploads_to_csv(output_path, uploads):
                     u'upload_url',
                     u'upload_file_size_in_kb',
                     u'resource_created',
-                    u'resource_last_modified'))
+                    u'resource_last_modified',
+                    u'package_state',
+                    u'resource_state'))
         for upload in uploads:
             w.writerow((
                 upload[u'resource_id'],
@@ -282,12 +292,14 @@ def _write_uploads_to_csv(output_path, uploads):
                 upload[u'upload_url'],
                 upload[u'upload_size'],
                 upload[u'created'],
-                upload[u'last_modified']))
+                upload[u'last_modified'],
+                upload[u'package_state'],
+                upload[u'resource_state']))
         click.echo(u"Wrote {} row(s) to {}"
                     .format(len(uploads), output_path))
 
 
-def _list_uploads(output_path):
+def _list_linked_uploads(output_path):
     # type: (str|None) -> None
     used_space, good_uploads = _get_uploads()
 
@@ -356,8 +368,11 @@ def _list_missing_uploads(output_path):
                         model.Resource.created,
                         model.Resource.last_modified,
                         model.Package.owner_org) \
-                        .join(model.Package, model.Resource.package_id == model.Package.id) \
-                        .filter(model.Resource.url_type == u'upload') \
+                        .join(model.Package,
+                              model.Resource.package_id == model.Package.id) \
+                        .filter(_and_(model.Resource.url_type == u'upload',
+                                      model.Resource.state == model.core.State.ACTIVE,
+                                      model.Package.state == model.core.State.ACTIVE)) \
                         .all()
 
     resources_missing_uploads = []
@@ -376,7 +391,9 @@ def _list_missing_uploads(output_path):
                 u'last_modified': h.render_datetime(last_modified),
                 u'organization_id': organization_id,
                 u'upload_url': None,
-                u'upload_size': None})
+                u'upload_size': None,
+                u'package_state': model.core.State.ACTIVE,
+                u'resource_state': model.core.State.ACTIVE})
 
     if output_path:
         _write_uploads_to_csv(output_path, resources_missing_uploads)
