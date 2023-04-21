@@ -193,6 +193,7 @@ def _fix_cors(args):
 
 
 def _get_uploads(get_linked = True, return_upload_objects_only = False):
+    # type: (bool, bool) -> tuple[float, list]
     cs = CloudStorage()
 
     resource_urls = set(os.path.join(
@@ -209,6 +210,7 @@ def _get_uploads(get_linked = True, return_upload_objects_only = False):
     uploads = cs.container.list_objects()
 
     parsed_uploads = []
+    total_space_used = 0
     for upload in uploads:
         if (upload.name in resource_urls
             if get_linked else
@@ -240,12 +242,24 @@ def _get_uploads(get_linked = True, return_upload_objects_only = False):
                 u'last_modified': h.render_datetime(resource_fields[4]) if resource_fields else None,
                 u'organization_id': resource_fields[5] if resource_fields else None,
                 u'upload_url': upload.name,
-                u'upload_size': u"{} KB".format((upload.size / 1000.0))})
+                u'upload_size': upload.size / 1000.0})
+            total_space_used += upload.size / 1000.0
 
-    return parsed_uploads
+    return total_space_used, parsed_uploads
+
+
+def _humanize_space(space):
+    # type: (float) -> tuple[float, str]
+    parsed_space = space
+    for unit in ['KB', 'MB', 'GB', 'TB']:
+        if parsed_space < 1000.0:
+            return parsed_space, unit
+        parsed_space /= 1000.0
+    return space, 'KB'
 
 
 def _write_uploads_to_csv(output_path, uploads):
+    #type: (str, list) -> None
     if not uploads:
         click.echo(u"Nothing to write to {}".format(output_path))
         return
@@ -256,7 +270,7 @@ def _write_uploads_to_csv(output_path, uploads):
                     u'organization_id',
                     u'resource_filename',
                     u'upload_url',
-                    u'upload_file_size',
+                    u'upload_file_size_in_kb',
                     u'resource_created',
                     u'resource_last_modified'))
         for upload in uploads:
@@ -274,48 +288,63 @@ def _write_uploads_to_csv(output_path, uploads):
 
 
 def _list_uploads(output_path):
-    good_uploads = _get_uploads()
+    # type: (str|None) -> None
+    used_space, good_uploads = _get_uploads()
 
     if output_path:
         _write_uploads_to_csv(output_path, good_uploads)
     else:
-        click.echo(u"Found {} resource(s)."
-                    .format(len(good_uploads)))
+        used_space, unit = _humanize_space(used_space)
+        click.echo(u"Found {} resource(s). Total space: {} {}."
+                    .format(len(good_uploads), used_space, unit))
 
 
 def _list_unlinked_uploads(output_path):
-    uploads_missing_resources = _get_uploads(get_linked = False)
+    # type: (str|None) -> None
+    used_space, uploads_missing_resources = _get_uploads(get_linked = False)
 
     if output_path:
         _write_uploads_to_csv(output_path, uploads_missing_resources)
     else:
-        click.echo(u"Found {} upload(s) with missing or deleted resources."
-                    .format(len(uploads_missing_resources)))
+        used_space, unit = _humanize_space(used_space)
+        click.echo(u"Found {} upload(s) with missing or deleted resources. Total space: {} {}."
+                    .format(len(uploads_missing_resources), used_space, unit))
 
 
 def _remove_unlinked_uploads():
     cs = CloudStorage()
 
-    uploads_missing_resources = _get_uploads(get_linked = False, return_upload_objects_only = True)
+    used_space, uploads_missing_resources = _get_uploads(get_linked = False, return_upload_objects_only = True)
 
     num_success = 0
     num_failures = 0
+    saved_space = 0
     for upload in uploads_missing_resources:
         if cs.container.delete_object(upload):
             click.echo(u"Deleted {}".format(upload.name))
             num_success += 1
+            saved_space += upload.size / 1000.0
+            used_space -= upload.size / 1000.0
         else:
             click.echo(u"Failed to delete {}".format(upload.name))
             num_failures += 1
 
     if num_success:
-        click.echo(u"Deleted {} upload(s).".format(num_success))
+        saved_space, unit = _humanize_space(used_space)
+        click.echo(u"Deleted {} upload(s). Saved {} {}."
+                    .format(num_success, saved_space, unit))
 
     if num_failures:
         click.echo(u"Failed to delete {} upload(s).".format(num_failures))
 
+    if used_space:
+        used_space, unit = _humanize_space(used_space)
+        click.echo(u"Remaining space used by unlinked uploads: {} {}."
+                    .format(used_space, unit))
+
 
 def _list_missing_uploads(output_path):
+    # type: (str|None) -> None
     cs = CloudStorage()
 
     upload_urls = set(u.name for u in cs.container.list_objects())
