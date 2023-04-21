@@ -295,7 +295,7 @@ def _list_uploads(output_path):
         _write_uploads_to_csv(output_path, good_uploads)
     else:
         used_space, unit = _humanize_space(used_space)
-        click.echo(u"Found {} resource(s). Total space: {} {}."
+        click.echo(u"Found {} uploads(s) with linked resources. Total space: {} {}."
                     .format(len(good_uploads), used_space, unit))
 
 
