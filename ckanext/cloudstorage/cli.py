@@ -357,7 +357,9 @@ def _list_missing_uploads(output_path):
                         model.Resource.last_modified,
                         model.Package.owner_org) \
                         .join(model.Package, model.Resource.package_id == model.Package.id) \
-                        .filter(model.Resource.url_type == u'upload') \
+                        .filter(_and_(model.Resource.url_type == u'upload',
+                                      model.Resource.state == u'active',
+                                      model.Package.state == u'active')) \
                         .all()
 
     resources_missing_uploads = []
