@@ -1,7 +1,6 @@
-# -*- coding: utf-8 -*-
-
 import click
-import ckanext.cloudstorage.utils as utils
+
+from ckanext.cloudstorage import utils
 
 
 @click.group()
@@ -16,23 +15,39 @@ def initdb():
     utils.initdb()
 
 
-@cloudstorage.command('fix-cors')
-@click.argument('domains', nargs=-1)
-def fix_cors(domains):
-    """Update CORS rules where possible.
-    """
-    msg, ok = utils.fix_cors(domains)
-    click.secho(msg, fg='green' if ok else 'red')
+@cloudstorage.command()
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    help="The output file path.",
+)
+def list_unlinked_uploads(output):
+    utils.list_linked_uploads(output)
 
 
 @cloudstorage.command()
-@click.argument('path')
-@click.argument('resource', required=False)
-def migrate(path, resource):
-    """Upload local storage to the remote.
-    """
-    utils.migrate(path, resource)
+def remove_unlinked_uploads():
+    utils.remove_unlinked_uploads()
 
 
-def get_commands():
-    return [cloudstorage]
+@cloudstorage.command()
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    help="The output file path.",
+)
+def list_missing_uploads(output):
+    utils.list_missing_uploads(output)
+
+
+@cloudstorage.command()
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    help="The output file path.",
+)
+def list_linked_uploads(output):
+    utils.list_linked_uploads(output)
