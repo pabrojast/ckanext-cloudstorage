@@ -14,7 +14,7 @@ Commands:
     - initdb                    Reinitalize database tables.
     - list-unlinked-uploads     Lists uploads in the storage container that do not match to any resources.
     - remove-unlinked-uploads   Permanently deletes uploads from the storage container that do not match to any resources.
-    - list-missing-uploads      Lists resources IDs that are missing uploads in the storage container.
+    - list-missing-uploads      Lists resources that are missing uploads in the storage container.
     - list-linked-uploads       Lists uploads in the storage container that do match to a resource.
 
 Usage:
