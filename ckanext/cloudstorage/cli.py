@@ -1,7 +1,10 @@
-# -*- coding: utf-8 -*-
-
 import click
-import ckanext.cloudstorage.utils as utils
+
+from ckanext.cloudstorage import utils
+
+
+def get_commands():
+    return [cloudstorage]
 
 
 @click.group()
@@ -13,26 +16,47 @@ def cloudstorage():
 
 @cloudstorage.command()
 def initdb():
+    """Reinitalize database tables."""
     utils.initdb()
 
 
-@cloudstorage.command('fix-cors')
-@click.argument('domains', nargs=-1)
-def fix_cors(domains):
-    """Update CORS rules where possible.
-    """
-    msg, ok = utils.fix_cors(domains)
-    click.secho(msg, fg='green' if ok else 'red')
+@cloudstorage.command()
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    help="The output file path.",
+)
+def list_unlinked_uploads(output):
+    """Lists uploads in the storage container that do not match to any resources."""
+    utils.list_linked_uploads(output)
 
 
 @cloudstorage.command()
-@click.argument('path')
-@click.argument('resource', required=False)
-def migrate(path, resource):
-    """Upload local storage to the remote.
-    """
-    utils.migrate(path, resource)
+def remove_unlinked_uploads():
+    """Permanently deletes uploads from the storage container that do not match to any resources."""
+    utils.remove_unlinked_uploads()
 
 
-def get_commands():
-    return [cloudstorage]
+@cloudstorage.command()
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    help="The output file path.",
+)
+def list_missing_uploads(output):
+    """Lists resources that are missing uploads in the storage container."""
+    utils.list_missing_uploads(output)
+
+
+@cloudstorage.command()
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    help="The output file path.",
+)
+def list_linked_uploads(output):
+    """Lists uploads in the storage container that do match to a resource."""
+    utils.list_linked_uploads(output)
