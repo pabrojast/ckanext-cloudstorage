@@ -3,6 +3,10 @@ import click
 from ckanext.cloudstorage import utils
 
 
+def get_commands():
+    return [cloudstorage]
+
+
 @click.group()
 def cloudstorage():
     """CloudStorage management commands.
