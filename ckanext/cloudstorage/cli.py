@@ -168,9 +168,6 @@ def _migrate(args):
 def _migrate_file(args):
     file_path = args['<path_to_file>']
     resource_id = args['<resource_id>']
-    if not os.path.isdir(file_path):
-        print('The file path cannot be found.')
-        return
     if not os.path.isfile(file_path):
         print('The file path is not a file.')
         return
