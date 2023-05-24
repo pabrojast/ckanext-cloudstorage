@@ -178,11 +178,11 @@ def _migrate_file(args):
     try:
         resource = lc.action.resource_show(id=resource_id)
     except NotFound:
-        print(u'\tResource not found')
+        print(u'Resource not found')
         return
 
     if resource['url_type'] != 'upload':
-        print(u'\t`url_type` is not `upload`.')
+        print(u'`url_type` is not `upload`.')
         return
 
     with open(file_path, 'rb') as fin:
@@ -194,11 +194,11 @@ def _migrate_file(args):
             uploader = ResourceCloudStorage(resource)
             uploader.upload(resource['id'])
             head, tail = os.path.split(file_path)
-            print(u'\tUploaded file {0} successfully to resource {1}.'.format(
+            print(u'Uploaded file {0} successfully for resource {1}.'.format(
                     tail, resource_id))
         except Exception as e:
             failed.append(resource_id)
-            print(u'\tError of type {0} during upload: {1}'.format(type(e), e))
+            print(u'Error of type {0} during upload: {1}'.format(type(e), e))
 
     if failed:
         log_file = tempfile.NamedTemporaryFile(delete=False)
