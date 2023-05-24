@@ -167,6 +167,9 @@ def migrate_file(file_path, resource_id):
         try:
             uploader = ResourceCloudStorage(resource)
             uploader.upload(resource['id'])
+            head, tail = os.path.split(file_path)
+            print(u'\tUploaded file {0} successfully to resource {1}.'.format(
+                    tail, resource_id))
         except Exception as e:
             failed.append(resource_id)
             print(u'\tError of type {0} during upload: {1}'.format(type(e), e))
