@@ -30,6 +30,7 @@ USAGE = """ckanext-cloudstorage
 Commands:
     - fix-cors                  Update CORS rules where possible.
     - migrate                   Upload local storage to the remote.
+    - migrate-file              Upload local file to the remote for a given resource.
     - initdb                    Reinitalize database tables.
     - list-unlinked-uploads     Lists uploads in the storage container that do not match to any resources.
     - remove-unlinked-uploads   Permanently deletes uploads from the storage container that do not match to any resources.
@@ -39,6 +40,7 @@ Commands:
 Usage:
     cloudstorage fix-cors <domains>... [--c=<config>]
     cloudstorage migrate <path_to_storage> [<resource_id>] [--c=<config>]
+    cloudstorage migrate-file <path_to_file> <resource_id> [--c=<config>]
     cloudstorage initdb [--c=<config>]
     cloudstorage list-unlinked-uploads [--o=<output>] [--c=<config>]
     cloudstorage remove-unlinked-uploads [--c=<config>]
@@ -74,6 +76,8 @@ class PasterCommand(CkanCommand):
             _fix_cors(args)
         elif args['migrate']:
             _migrate(args)
+        elif args['migrate-file']:
+            _migrate_file(args)
         elif args['initdb']:
             _initdb()
         elif args['list-unlinked-uploads']:
@@ -154,6 +158,47 @@ def _migrate(args):
             except Exception as e:
                 failed.append(resource_id)
                 print(u'\tError of type {0} during upload: {1}'.format(type(e), e))
+
+    if failed:
+        log_file = tempfile.NamedTemporaryFile(delete=False)
+        log_file.file.writelines(failed)
+        print(u'ID of all failed uploads are saved to `{0}`'.format(log_file.name))
+
+
+def _migrate_file(args):
+    file_path = args['<path_to_file>']
+    resource_id = args['<resource_id>']
+    if not os.path.isdir(file_path):
+        print('The file path cannot be found.')
+        return
+    if not os.path.isfile(file_path):
+        print('The file path is not a file.')
+        return
+
+    lc = LocalCKAN()
+    failed = []
+
+    try:
+        resource = lc.action.resource_show(id=resource_id)
+    except NotFound:
+        print(u'\tResource not found')
+        return
+
+    if resource['url_type'] != 'upload':
+        print(u'\t`url_type` is not `upload`.')
+        return
+
+    with open(file_path, 'rb') as fin:
+        resource['upload'] = FakeFileStorage(
+            fin,
+            resource['url'].split('/')[-1]
+        )
+        try:
+            uploader = ResourceCloudStorage(resource)
+            uploader.upload(resource['id'])
+        except Exception as e:
+            failed.append(resource_id)
+            print(u'\tError of type {0} during upload: {1}'.format(type(e), e))
 
     if failed:
         log_file = tempfile.NamedTemporaryFile(delete=False)
