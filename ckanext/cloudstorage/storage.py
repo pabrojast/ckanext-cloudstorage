@@ -285,9 +285,6 @@ class ResourceCloudStorage(CloudStorage):
             self.old_filename = old_resource.url
             resource['url_type'] = ''
 
-        if upload_field_storage is None and resource.get('url_type') != 'upload':
-            resource['url_type'] = ''
-
     def path_from_filename(self, rid, filename):
         """
         Returns a bucket path for the given resource_id and filename.
