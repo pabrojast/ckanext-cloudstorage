@@ -3,3 +3,4 @@ apache-libcloud==2.8.3
 ckanapi>=1.0,<5
 six
 azure-storage-blob==12.2.0
+msrest==0.6.21
