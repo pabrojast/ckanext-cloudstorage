@@ -439,9 +439,9 @@ def reguess_mimetypes(resource_id=None, verbose=False):
                 blob_client = container_client.get_blob_client(
                     uploader.path_from_filename(resource['id'], uploader.filename))
                 content_type, _ = mimetypes.guess_type(uploader.filename)
-                if content_type:
-                    #content_disposition
-                    blob_client.set_http_headers(ContentSettings(content_type=content_type))
+                if not content_type:
+                    content_type = 'application/octet-stream'
+                blob_client.set_http_headers(ContentSettings(content_type=content_type))
                 if verbose:
                     click.echo(u'Reguessed mimetype successfully for resource {1}.'.format(resource_id))
                 success += 1

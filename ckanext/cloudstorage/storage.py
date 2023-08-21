@@ -326,8 +326,9 @@ class ResourceCloudStorage(CloudStorage):
                 blob_client.upload_blob(stream, overwrite=True)
                 if self.guess_mimetype:
                     content_type, _ = mimetypes.guess_type(self.filename)
-                    if content_type:
-                        blob_client.set_http_headers(ContentSettings(content_type=content_type))
+                    if not content_type:
+                        content_type = 'application/octet-stream'
+                    blob_client.set_http_headers(ContentSettings(content_type=content_type))
                 return stream.tell()
 
             else:
