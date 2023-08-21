@@ -83,3 +83,16 @@ def list_missing_uploads(output):
 def list_linked_uploads(output):
     """Lists uploads in the storage container that do match to a resource."""
     utils.list_linked_uploads(output)
+
+
+@cloudstorage.command()
+@click.option(
+    "-r",
+    "--resource_id",
+    default=None,
+    help="A single resource ID to reguess the mimetype for.",
+)
+@click.option('-v', '--verbose', is_flag=True, default=False, help='Higher verbosity level.')
+def reguess_mimetypes(resource_id=None, verbose=False):
+    """Reguess mimtypes for all uploads."""
+    utils.reguess_mimetypes(resource_id, verbose)

@@ -5,6 +5,9 @@ import click
 import unicodecsv as csv
 from sqlalchemy import and_ as _and_
 import tempfile
+from azure.storage.blob import ContentSettings  # type: ignore
+from azure.storage.blob import BlobServiceClient
+import mimetypes
 
 from ckan.lib.munge import munge_filename
 from ckan import model
@@ -388,3 +391,66 @@ def list_missing_uploads(output_path):
     else:
         click.echo(u"Found {} resource(s) with missing uploads."
                     .format(len(resources_missing_uploads)))
+
+
+def reguess_mimetypes(resource_id=None, verbose=False):
+    # type: (str|None, bool) -> None
+    lc = LocalCKAN()
+
+    if resource_id:
+        resource_fields = [(resource_id, None)]
+    else:
+        resource_fields = model.Session.query(model.Resource.id,
+                                            model.Resource.package_id) \
+                            .join(model.Package,
+                                model.Resource.package_id == model.Package.id) \
+                            .filter(_and_(model.Resource.url_type == u'upload',
+                                        model.Resource.state == model.core.State.ACTIVE,
+                                        model.Package.state == model.core.State.ACTIVE)) \
+                            .all()
+
+    total = len(resource_fields)
+    count = 0
+    success = 0
+    failed = 0
+
+    click.echo(u'Reguessing ~{} resource formats.'.format(total))
+
+    for resource_id, package_id in resource_fields:
+        try:
+            resource = lc.action.resource_show(id=resource_id)
+        except NotFound:
+            if verbose:
+                click.echo(u'Could not find resource {}. Skipping...'.format(resource_id))
+            continue
+
+        count += 1
+
+        resource['upload'] = FakeFileStorage(  # resource object does not have an upload at this point, fake it.
+            resource['url'].split('/')[-1],  # we do not need the actual file data for this.
+            resource['url'].split('/')[-1]
+        )
+
+        try:
+            uploader = ResourceCloudStorage(resource)
+            if uploader.filename and uploader.can_use_advanced_azure:
+                svc_client = BlobServiceClient.from_connection_string(uploader.connection_link)
+                container_client = svc_client.get_container_client(uploader.container_name)
+                blob_client = container_client.get_blob_client(
+                    uploader.path_from_filename(resource['id'], uploader.filename))
+                content_type, _ = mimetypes.guess_type(uploader.filename)
+                if content_type:
+                    #content_disposition
+                    blob_client.set_http_headers(ContentSettings(content_type=content_type))
+                if verbose:
+                    click.echo(u'Reguessed mimetype successfully for resource {1}.'.format(resource_id))
+                success += 1
+                click.echo(u'\t{}/~{}'.format(count,total))
+        except Exception as e:
+            failed += 1
+            if verbose:
+                click.echo(u'Failed to reguess mimetype: {0} - {1}'.format(type(e), e))
+            click.echo(u'\t{}/~{}'.format(count,total))
+
+    click.echo(u'Successfully reguessed {}/{} resource formats.'.format(success, count))
+    click.echo(u'Failed to reguess {}/{} resource formats.'.format(failed, count))

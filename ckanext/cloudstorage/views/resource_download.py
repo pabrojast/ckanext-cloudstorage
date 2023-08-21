@@ -1,6 +1,7 @@
 import os.path
 
-from ckan.plugins.toolkit import c, _
+from ckan.plugins.toolkit import c, _, request
+import mimetypes
 from ckan import logic, model
 from ckan.lib import base, uploader
 import ckan.lib.helpers as h
@@ -48,9 +49,11 @@ def resource_download(id, resource_id, filename= None):
     # if the client requests with a Content-Type header (e.g. Text preview)
     # we have to add the header to the signature
     try:
-        content_type = getattr(c.pylons.request, "content_type", None)
+        content_type = getattr(request, "content_type", None)
     except AttributeError:
         content_type = None
+    if not content_type:
+        content_type, _ = mimetypes.guess_type(filename)
     uploaded_url = upload.get_url_from_filename(resource['id'], filename,
                                                 content_type=content_type)
 
@@ -58,9 +61,9 @@ def resource_download(id, resource_id, filename= None):
     # provider being down.
     if uploaded_url is None:
         base.abort(404, _('No download is available'))
-    
+
     return  h.redirect_to(uploaded_url)
-    
+
 
 
 resource_blueprint.add_url_rule(

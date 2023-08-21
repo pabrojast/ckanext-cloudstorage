@@ -45,6 +45,10 @@ class PasterCommand(CkanCommand):
         super(PasterCommand, self).__init__(name)
         self.parser.add_option('-o', '--output', dest='output', action='store',
                                default=None, help='The output file path.')
+        self.parser.add_option('-r', '--resource_id', dest='resource_id', action='store',
+                               default=None, help='A single resource ID to reguess the mimetype for.')
+        self.parser.add_option('-v', '--verbose', dest='verbose', action='store_true',
+                               default=False, help='Higher verbosity level.')
 
     def command(self):
         self._load_config()
@@ -66,6 +70,8 @@ class PasterCommand(CkanCommand):
             _list_missing_uploads(self.options.output)
         elif args['list-linked-uploads']:
             _list_linked_uploads(self.options.output)
+        elif args['reguess-mimetypes']:
+            _reguess_mimetypes(self.options.resource_id, self.options.verbose)
 
 
 def _migrate(args):
@@ -104,3 +110,8 @@ def _list_missing_uploads(output_path):
 def _list_linked_uploads(output_path):
     # type: (str|None) -> None
     utils.list_linked_uploads(output_path)
+
+
+def _reguess_mimetypes(resource_id, verbose):
+    # type: (str|None, bool) -> None
+    utils.reguess_mimetypes(resource_id, verbose)
