@@ -326,8 +326,9 @@ class ResourceCloudStorage(CloudStorage):
                 blob_client.upload_blob(stream, overwrite=True)
                 if self.guess_mimetype:
                     content_type, _ = mimetypes.guess_type(self.filename)
-                    if content_type:
-                        blob_client.set_http_headers(ContentSettings(content_type=mimetypes))
+                    if not content_type:
+                        content_type = 'application/octet-stream'
+                    blob_client.set_http_headers(ContentSettings(content_type=content_type))
                 return stream.tell()
 
             else:
@@ -392,7 +393,7 @@ class ResourceCloudStorage(CloudStorage):
         # shared access link instead of simply redirecting to the file.
         if self.can_use_advanced_azure and self.use_secure_urls:
             from azure.storage.blob import BlobClient, BlobSasPermissions, BlobServiceClient, generate_blob_sas
-            
+
             svc_client = BlobServiceClient.from_connection_string(self.connection_link)
             container_client = svc_client.get_container_client(self.container_name)
             blob_client = container_client.get_blob_client(path)
@@ -409,7 +410,7 @@ class ResourceCloudStorage(CloudStorage):
                                     container_name=blob_client.container_name,
                                     blob_name=blob_client.blob_name,
                                     credential=sas_token)
-            
+
             # The url from blob_client above actually generate the url for download
             # but the file path is mixed with the filename e.g
             # we want to download `example.csv` but the url generate this
@@ -421,7 +422,7 @@ class ResourceCloudStorage(CloudStorage):
                 path,
                 sas_token
             )
-            
+
             return url
 
         elif self.can_use_advanced_aws and self.use_secure_urls:
