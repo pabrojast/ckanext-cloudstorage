@@ -298,8 +298,9 @@ class ResourceCloudStorage(CloudStorage):
             munge.munge_filename(filename)
         )
 
-    def get_path(self, resource_id):
-        resource = get_action('resource_show')({}, {'id': resource_id})
+    def get_path(self, resource_id, context={}):
+        # adds context parameter to allow for private resources (canada fork only)
+        resource = get_action('resource_show')(context, {'id': resource_id})
         filename = resource['url'].rsplit('/', 1)[-1]
 
         return self.get_url_from_filename(resource_id, filename)
