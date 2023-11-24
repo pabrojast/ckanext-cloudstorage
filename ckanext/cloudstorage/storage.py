@@ -299,7 +299,11 @@ class ResourceCloudStorage(CloudStorage):
         )
 
     def get_path(self, resource_id):
-        resource = get_action('resource_show')({}, {'id': resource_id})
+        # at this point, any auth should be done already as you
+        # have to pass a Resource object to even get the uploader class (canada fork only)
+        #TODO: upstream contribution??
+        user = get_action('get_site_user')({'ignore_auth': True}, {})
+        resource = get_action('resource_show')({"user": user['name']}, {'id': resource_id})
         filename = resource['url'].rsplit('/', 1)[-1]
 
         return self.get_url_from_filename(resource_id, filename)
