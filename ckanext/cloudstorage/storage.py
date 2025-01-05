@@ -392,9 +392,6 @@ class ResourceCloudStorage(CloudStorage):
         """
         # Find the key the file *should* be stored at.
         path = self.path_from_filename(rid, filename)
-        # Generar URL manualmente para Hetzner
-        if 'host' in self.driver_options:
-            return f"{self.driver_options['host']}/{self.container_name}/{path}"
         # If advanced azure features are enabled, generate a temporary
         # shared access link instead of simply redirecting to the file.
         if self.can_use_advanced_azure and self.use_secure_urls:
