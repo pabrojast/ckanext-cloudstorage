@@ -6,6 +6,8 @@ from ckanext.cloudstorage import storage
 from ckanext.cloudstorage import helpers
 import ckanext.cloudstorage.logic.action.multipart as m_action
 import ckanext.cloudstorage.logic.auth.multipart as m_auth
+import ckanext.cloudstorage.logic.action.azure_direct as azure_action
+import ckanext.cloudstorage.logic.auth.azure_direct as azure_auth
 from ckanext.cloudstorage import views
 import logging
 
@@ -36,7 +38,9 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
 
     def get_helpers(self):
         return dict(
-            cloudstorage_use_secure_urls=helpers.use_secure_urls
+            cloudstorage_use_secure_urls=helpers.use_secure_urls,
+            cloudstorage_use_azure_direct_upload=helpers.use_azure_direct_upload,
+            cloudstorage_get_cloud_storage_type=helpers.get_cloud_storage_type
         )
 
     def configure(self, config):
@@ -74,6 +78,8 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
             'cloudstorage_abort_multipart': m_action.abort_multipart,
             'cloudstorage_check_multipart': m_action.check_multipart,
             'cloudstorage_clean_multipart': m_action.clean_multipart,
+            'cloudstorage_generate_azure_direct_upload_url': azure_action.generate_azure_direct_upload_url,
+            'cloudstorage_confirm_azure_direct_upload': azure_action.confirm_azure_direct_upload,
         }
 
     # IAuthFunctions
@@ -86,6 +92,8 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
             'cloudstorage_abort_multipart': m_auth.abort_multipart,
             'cloudstorage_check_multipart': m_auth.check_multipart,
             'cloudstorage_clean_multipart': m_auth.clean_multipart,
+            'cloudstorage_generate_azure_direct_upload_url': azure_auth.generate_azure_direct_upload_url,
+            'cloudstorage_confirm_azure_direct_upload': azure_auth.confirm_azure_direct_upload,
         }
 
     # IResourceController

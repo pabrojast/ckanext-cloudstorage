@@ -210,6 +210,16 @@ class CloudStorage(object):
         return False
 
     @property
+    def use_azure_direct_upload(self):
+        """
+        `True` if ckanext-cloudstorage is configured to use Azure direct uploads,
+        `False` otherwise. Direct uploads bypass the gateway to avoid timeout errors.
+        """
+        return p.toolkit.asbool(
+            config.get('ckanext.cloudstorage.azure_direct_upload', False)
+        )
+
+    @property
     def can_use_advanced_aws(self):
         """
         `True` if the `boto` module is installed and ckanext-cloudstorage has
@@ -471,6 +481,57 @@ class ResourceCloudStorage(CloudStorage):
             elif 'url' in obj.extra:
                 return obj.extra['url']
             raise
+
+    def generate_azure_direct_upload_url(self, resource_id, filename, file_size):
+        """
+        Generate a SAS token URL for direct upload to Azure Blob Storage.
+        This allows the client to upload directly to Azure, bypassing the gateway.
+        
+        :param resource_id: The resource ID
+        :param filename: The original filename
+        :param file_size: Size of the file to upload
+        :returns: Dict with upload URL and other necessary information
+        """
+        if not self.can_use_advanced_azure or not self.use_azure_direct_upload:
+            raise Exception("Azure direct upload not available or not enabled")
+            
+        from azure.storage.blob import BlobServiceClient, BlobSasPermissions, generate_blob_sas
+        from datetime import datetime, timedelta
+        
+        # Create blob path
+        blob_path = self.path_from_filename(resource_id, filename)
+        
+        # Get blob service client
+        svc_client = BlobServiceClient.from_connection_string(self.connection_link)
+        container_client = svc_client.get_container_client(self.container_name)
+        blob_client = container_client.get_blob_client(blob_path)
+        
+        # Generate SAS token with write permissions
+        permissions = BlobSasPermissions(write=True, create=True)
+        expiry_time = datetime.utcnow() + timedelta(hours=1)  # 1 hour expiry
+        
+        sas_token = generate_blob_sas(
+            account_name=blob_client.account_name,
+            account_key=blob_client.credential.account_key,
+            container_name=blob_client.container_name,
+            blob_name=blob_client.blob_name,
+            permission=permissions,
+            expiry=expiry_time
+        )
+        
+        # Construct the upload URL
+        upload_url = f"https://{blob_client.account_name}.blob.core.windows.net/{self.container_name}/{blob_path}?{sas_token}"
+        
+        return {
+            'upload_url': upload_url,
+            'blob_path': blob_path,
+            'expiry': expiry_time.isoformat(),
+            'method': 'PUT',
+            'headers': {
+                'x-ms-blob-type': 'BlockBlob',
+                'Content-Length': str(file_size)
+            }
+        }
 
     @property
     def package(self):

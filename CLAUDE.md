@@ -52,6 +52,7 @@ pip install -e .
 # Optional features:
 # ckanext.cloudstorage.use_secure_urls = 1
 # ckanext.cloudstorage.max_multipart_lifetime = 7
+# ckanext.cloudstorage.azure_direct_upload = 1  # Enable Azure direct uploads (bypasses gateway)
 ```
 
 ## Architecture Overview
@@ -94,6 +95,7 @@ The extension is heavily configuration-driven:
 - **Secure URLs**: Generates temporary signed URLs for private resources
 - **Access Control**: Integrates with CKAN's authorization system
 - **Multi-Auth**: Supports various AWS authentication methods (IAM, boto3)
+- **Azure Direct Upload**: Allows direct uploads to Azure Blob Storage using SAS tokens, bypassing the gateway to avoid timeout errors
 
 ## Development Patterns
 
@@ -130,3 +132,13 @@ When working with this extension, you'll typically:
 3. Configure CORS rules with `fix-cors` for DataViews functionality
 4. Monitor and clean up orphaned uploads using list/remove commands
 5. Debug MIME type issues with `reguess-mimetypes`
+6. Enable Azure direct uploads with `ckanext.cloudstorage.azure_direct_upload = 1` to avoid gateway timeouts
+
+## Azure Direct Upload Feature
+
+When `ckanext.cloudstorage.azure_direct_upload = 1` is enabled:
+- Files upload directly to Azure Blob Storage using SAS tokens
+- Bypasses CKAN gateway to prevent timeout errors on large files
+- Uses `cloudstorage-azure-direct-upload.js` frontend module instead of multipart uploads
+- Requires Azure advanced features (`azure-storage-blob` package)
+- New API actions: `cloudstorage_generate_azure_direct_upload_url`, `cloudstorage_confirm_azure_direct_upload`

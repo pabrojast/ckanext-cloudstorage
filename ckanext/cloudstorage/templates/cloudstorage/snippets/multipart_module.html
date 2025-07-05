@@ -1,5 +1,8 @@
 <div
-    {% if h.cloudstorage_use_secure_urls() -%}
+    {% if h.cloudstorage_use_azure_direct_upload() -%}
+        data-module="cloudstorage-azure-direct-upload"
+        data-module-package-id="_{{ pkg_name }}"
+    {%- elif h.cloudstorage_use_secure_urls() -%}
         data-module="cloudstorage-multipart-upload"
         data-module-cloud='S3'
         data-module-package-id="_{{ pkg_name }}"
