@@ -40,7 +40,8 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
         return dict(
             cloudstorage_use_secure_urls=helpers.use_secure_urls,
             cloudstorage_use_azure_direct_upload=helpers.use_azure_direct_upload,
-            cloudstorage_get_cloud_storage_type=helpers.get_cloud_storage_type
+            cloudstorage_get_cloud_storage_type=helpers.get_cloud_storage_type,
+            cloudstorage_use_enhanced_upload=helpers.use_enhanced_upload
         )
 
     def configure(self, config):

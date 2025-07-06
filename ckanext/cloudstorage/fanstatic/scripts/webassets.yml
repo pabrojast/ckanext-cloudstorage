@@ -9,3 +9,4 @@ main:
     - vendor/jquery-widget.js
     - cloudstorage-multipart-upload.js
     - cloudstorage-azure-direct-upload.js
+    - cloudstorage-enhanced-upload.js

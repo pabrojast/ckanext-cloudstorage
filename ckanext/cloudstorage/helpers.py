@@ -31,3 +31,13 @@ def get_cloud_storage_type():
         return storage.driver_name
     except:
         return None
+
+
+def use_enhanced_upload():
+    """Check if enhanced upload interface should be used.
+    
+    This can be controlled via config option:
+    ckanext.cloudstorage.use_enhanced_upload = true
+    """
+    from ckan.common import config
+    return config.get('ckanext.cloudstorage.use_enhanced_upload', 'false').lower() == 'true'

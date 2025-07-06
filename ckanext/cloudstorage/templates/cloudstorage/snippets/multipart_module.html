@@ -1,13 +1,19 @@
-<div
-    {% if h.cloudstorage_use_azure_direct_upload() -%}
-        data-module="cloudstorage-azure-direct-upload"
-        data-module-package-id="_{{ pkg_name }}"
-    {%- elif h.cloudstorage_use_secure_urls() -%}
-        data-module="cloudstorage-multipart-upload"
-        data-module-cloud='S3'
-        data-module-package-id="_{{ pkg_name }}"
-    {%- endif %}
-   >
-    {{ parent() }}
+{# Check if enhanced upload is requested #}
+{% if use_enhanced_upload or h.cloudstorage_use_enhanced_upload() %}
+    {% include 'cloudstorage/snippets/fileupload.html' %}
+{% else %}
+    {# Original implementation #}
+    <div
+        {% if h.cloudstorage_use_azure_direct_upload() -%}
+            data-module="cloudstorage-azure-direct-upload"
+            data-module-package-id="_{{ pkg_name }}"
+        {%- elif h.cloudstorage_use_secure_urls() -%}
+            data-module="cloudstorage-multipart-upload"
+            data-module-cloud='S3'
+            data-module-package-id="_{{ pkg_name }}"
+        {%- endif %}
+       >
+        {{ parent() }}
 
-</div>
+    </div>
+{% endif %}

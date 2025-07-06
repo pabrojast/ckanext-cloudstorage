@@ -1,0 +1,11 @@
+{% ckan_extends %}
+
+{# Example template showing how to use the enhanced upload interface #}
+
+{% block form %}
+    {# Enable the enhanced upload interface by passing use_enhanced_upload=True #}
+    {% snippet 'cloudstorage/snippets/multipart_module.html', 
+               pkg_name=pkg_name, 
+               parent=super, 
+               use_enhanced_upload=True %}
+{% endblock %}

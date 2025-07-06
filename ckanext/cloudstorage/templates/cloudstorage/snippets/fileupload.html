@@ -1,0 +1,260 @@
+{#
+  Advanced File Upload Module
+  
+  This template provides an enhanced file upload interface with:
+  - Multiple file selection and upload
+  - Drag and drop support
+  - Upload progress tracking
+  - Queue management
+  - File type validation
+  
+  Variables:
+    - pkg_name: The package/dataset ID
+    - data: Existing resource data (for editing)
+    - upload_label: Label for the upload field
+    - url_label: Label for the URL field
+#}
+
+<div class="cloudstorage-upload-module"
+     data-module="cloudstorage-enhanced-upload"
+     data-module-package-id="{{ pkg_name }}"
+     data-module-azure-direct="{{ h.cloudstorage_use_azure_direct_upload() | lower }}"
+     data-module-multipart="{{ h.cloudstorage_use_secure_urls() | lower }}">
+  
+  {# File Upload Section #}
+  <div class="control-group control-full">
+    <label class="control-label" for="field-upload">{{ upload_label or _('File Upload') }}</label>
+    <div class="controls">
+      
+      {# Drag & Drop Zone #}
+      <div class="upload-dropzone" id="upload-dropzone">
+        <div class="dropzone-content">
+          <i class="fa fa-cloud-upload fa-3x"></i>
+          <h3>{{ _('Drag and drop files here') }}</h3>
+          <p>{{ _('or') }}</p>
+          <button type="button" class="btn btn-primary btn-browse-files">
+            <i class="fa fa-folder-open"></i> {{ _('Browse Files') }}
+          </button>
+          <input type="file" id="field-upload-multiple" class="hidden" multiple="multiple" />
+          <p class="help-block">{{ _('You can select multiple files. Maximum file size: 5GB per file.') }}</p>
+        </div>
+      </div>
+      
+      {# File Queue #}
+      <div class="upload-queue hidden" id="upload-queue">
+        <h4>{{ _('Upload Queue') }}</h4>
+        <div class="queue-actions">
+          <button type="button" class="btn btn-sm btn-success btn-upload-all">
+            <i class="fa fa-upload"></i> {{ _('Upload All') }}
+          </button>
+          <button type="button" class="btn btn-sm btn-danger btn-clear-queue">
+            <i class="fa fa-trash"></i> {{ _('Clear Queue') }}
+          </button>
+        </div>
+        <ul class="upload-queue-list list-unstyled" id="upload-queue-list">
+          {# Files will be added here dynamically #}
+        </ul>
+      </div>
+      
+      {# Overall Progress #}
+      <div class="overall-progress hidden" id="overall-progress">
+        <h4>{{ _('Overall Progress') }}</h4>
+        <div class="progress">
+          <div class="progress-bar progress-bar-striped active" role="progressbar" 
+               style="width: 0%;" id="overall-progress-bar">
+            <span class="progress-text">0%</span>
+          </div>
+        </div>
+        <p class="progress-info">
+          <span id="files-completed">0</span> {{ _('of') }} <span id="files-total">0</span> {{ _('files completed') }}
+        </p>
+      </div>
+      
+    </div>
+  </div>
+  
+  {# Alternative: URL Input #}
+  <div class="control-group control-full">
+    <label class="control-label" for="field-url">{{ url_label or _('URL') }}</label>
+    <div class="controls">
+      <input id="field-url" type="url" name="url" value="{{ data.url }}" 
+             placeholder="http://example.com/my-data.csv" class="form-control" />
+      <p class="help-block">{{ _('Alternatively, you can provide a URL to a file hosted elsewhere.') }}</p>
+    </div>
+  </div>
+  
+</div>
+
+{# File Queue Item Template #}
+<script type="text/template" id="upload-queue-item-template">
+  <li class="queue-item" data-file-id="<%= fileId %>">
+    <div class="file-info">
+      <i class="fa fa-file-o file-icon"></i>
+      <span class="file-name"><%= fileName %></span>
+      <span class="file-size">(<%= fileSize %>)</span>
+    </div>
+    <div class="file-actions">
+      <button type="button" class="btn btn-xs btn-primary btn-upload-file" data-file-id="<%= fileId %>">
+        <i class="fa fa-upload"></i> {{ _('Upload') }}
+      </button>
+      <button type="button" class="btn btn-xs btn-danger btn-remove-file" data-file-id="<%= fileId %>">
+        <i class="fa fa-times"></i> {{ _('Remove') }}
+      </button>
+    </div>
+    <div class="file-progress hidden">
+      <div class="progress progress-sm">
+        <div class="progress-bar progress-bar-success" role="progressbar" style="width: 0%;">
+          <span class="sr-only">0%</span>
+        </div>
+      </div>
+      <span class="progress-text">0%</span>
+    </div>
+    <div class="file-status">
+      <span class="status-text text-muted">{{ _('Pending') }}</span>
+    </div>
+  </li>
+</script>
+
+<style>
+/* Enhanced Upload Styles */
+.cloudstorage-upload-module {
+  margin: 20px 0;
+}
+
+.upload-dropzone {
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  padding: 40px;
+  text-align: center;
+  background: #f9f9f9;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone.dragover {
+  border-color: #3498db;
+  background: #e3f2fd;
+}
+
+.dropzone-content {
+  pointer-events: none;
+}
+
+.dropzone-content i {
+  color: #3498db;
+  margin-bottom: 15px;
+}
+
+.upload-queue {
+  margin-top: 20px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 15px;
+  background: #fff;
+}
+
+.queue-actions {
+  margin-bottom: 15px;
+  text-align: right;
+}
+
+.queue-actions .btn {
+  margin-left: 5px;
+}
+
+.upload-queue-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.queue-item {
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.queue-item:last-child {
+  border-bottom: none;
+}
+
+.file-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.file-icon {
+  margin-right: 10px;
+  font-size: 18px;
+}
+
+.file-name {
+  font-weight: 500;
+  margin-right: 10px;
+  word-break: break-word;
+}
+
+.file-size {
+  color: #666;
+  font-size: 12px;
+}
+
+.file-actions {
+  margin: 0 10px;
+}
+
+.file-progress {
+  flex: 1;
+  max-width: 200px;
+  margin: 0 10px;
+}
+
+.file-progress .progress {
+  margin-bottom: 0;
+  height: 10px;
+}
+
+.progress-text {
+  font-size: 12px;
+  margin-left: 5px;
+}
+
+.file-status {
+  min-width: 80px;
+  text-align: right;
+}
+
+.status-text {
+  font-size: 12px;
+}
+
+.overall-progress {
+  margin-top: 20px;
+  padding: 15px;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.overall-progress .progress {
+  height: 25px;
+  margin-bottom: 10px;
+}
+
+.overall-progress .progress-bar {
+  line-height: 25px;
+}
+
+.progress-info {
+  text-align: center;
+  margin: 0;
+  color: #666;
+}
+
+/* Status Colors */
+.status-uploading { color: #3498db; }
+.status-success { color: #27ae60; }
+.status-error { color: #e74c3c; }
+</style>
