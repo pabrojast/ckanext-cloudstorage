@@ -150,11 +150,11 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
         return 'cloudstorage/snippets/resource_form.html'
 
     def is_fallback(self):
-        # Return True to register this plugin as the default handler for
-        # packages not handled by any other IDatasetForm plugin
+        # Return True to handle all package types as a fallback
+        # This ensures our resource_form is used for all dataset types
         return True
 
     def package_types(self):
-        # This plugin doesn't handle any special package types, it just
-        # extends the default `dataset` package type
+        # Return empty list when acting as fallback
+        # This allows us to handle all package types not explicitly claimed
         return []

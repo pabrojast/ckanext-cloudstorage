@@ -3,7 +3,8 @@
     "allow": [
       "Bash(grep:*)",
       "Bash(find:*)",
-      "WebFetch(domain:docs.ckan.org)"
+      "WebFetch(domain:docs.ckan.org)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }
