@@ -1,0 +1,27 @@
+{#
+  CloudStorage Resource Form
+  
+  This template extends the schemingdcat resource form to ensure cloud storage
+  functionality is available. The actual integration happens through the
+  schemingdcat/form_snippets/upload.html override.
+#}
+
+{% extends 'schemingdcat/package/snippets/resource_form.html' %}
+
+{# Simply ensure the parent renders and assets are available #}
+{% block basic_fields %}
+  {{ super() }}
+{% endblock %}
+
+{# Ensure compatibility with parent blocks #}
+{% block stages %}
+  {{ super() }}
+{% endblock %}
+
+{% block errors %}
+  {{ super() }}
+{% endblock %}
+
+{% block metadata_fields %}
+  {{ super() }}
+{% endblock %}

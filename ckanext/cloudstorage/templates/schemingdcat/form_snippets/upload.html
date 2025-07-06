@@ -1,0 +1,67 @@
+{#
+  CloudStorage Upload Form Snippet for SchemingDCAT
+  
+  This template overrides the schemingdcat upload form snippet to integrate
+  cloud storage functionality. It replaces the standard upload field with
+  the cloudstorage-enabled version.
+  
+  Variables available:
+    - field: The field configuration from the schema
+    - data: The current form data
+    - errors: Any validation errors
+    - pkg_name: The package/dataset ID (available in resource forms)
+#}
+
+{% import 'macros/form2.html' as form %}
+
+{%- set pkg_name = data.get('package_id', pkg_name) -%}
+{%- set upload_label = h.scheming_language_text(field.upload_label) or _('Upload') -%}
+{%- set url_label = h.scheming_language_text(field.label) -%}
+
+{# Check if we should use enhanced upload #}
+{% if h.cloudstorage_use_enhanced_upload() %}
+  {# Use the enhanced upload interface #}
+  {% include 'cloudstorage/snippets/fileupload.html' %}
+{% else %}
+  {# Wrap standard upload with cloudstorage module #}
+  <div
+    {% if h.cloudstorage_use_azure_direct_upload() -%}
+      data-module="cloudstorage-azure-direct-upload"
+      data-module-package-id="_{{ pkg_name }}"
+    {%- elif h.cloudstorage_use_secure_urls() -%}
+      data-module="cloudstorage-multipart-upload"
+      data-module-cloud='S3'
+      data-module-package-id="_{{ pkg_name }}"
+    {%- endif %}
+  >
+    {# Render the standard upload field #}
+    {%- set is_upload = (data.get(field.upload_field) or data.get('url_type') == 'upload') -%}
+    {% call form.image_upload(
+        data,
+        errors,
+        field_url=field.field_name,
+        field_upload=field.upload_field,
+        field_clear=field.upload_clear,
+        is_upload_enabled=h.uploads_enabled(),
+        is_url=data[field.field_name] and not is_upload,
+        is_upload=is_upload,
+        upload_label=upload_label,
+        url_label=url_label,
+        classes=field.classes if 'classes' in field else ['control-medium'],
+        attrs=dict({"class": "form-control"}, **(field.get('form_attrs', {}))),
+        placeholder=field.form_placeholder
+        ) 
+    %}
+      {%- snippet 'scheming/form_snippets/help_text.html', field=field -%}
+    {% endcall %}
+  </div>
+{% endif %}
+
+{# Include the cloudstorage JavaScript assets #}
+{% asset 'cloudstorage-js/cloudstorage-multipart-upload' %}
+{% if h.cloudstorage_use_azure_direct_upload() %}
+  {% asset 'cloudstorage-js/cloudstorage-azure-direct-upload' %}
+{% endif %}
+{% if h.cloudstorage_use_enhanced_upload() %}
+  {% asset 'cloudstorage-js/cloudstorage-enhanced-upload' %}
+{% endif %}

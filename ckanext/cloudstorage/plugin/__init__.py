@@ -27,6 +27,7 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
     plugins.implements(plugins.ITemplateHelpers)
     plugins.implements(plugins.IAuthFunctions)
     plugins.implements(plugins.IResourceController, inherit=True)
+    plugins.implements(plugins.IDatasetForm, inherit=True)
 
     # IConfigurer
 
@@ -141,3 +142,19 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
             for old_file in uploader.container.iterate_objects():
                 if old_file.name.startswith(upload_path):
                     old_file.delete()
+
+    # IDatasetForm
+
+    def resource_form(self):
+        # Override the resource form to use cloudstorage template
+        return 'cloudstorage/snippets/resource_form.html'
+
+    def is_fallback(self):
+        # Return True to register this plugin as the default handler for
+        # packages not handled by any other IDatasetForm plugin
+        return True
+
+    def package_types(self):
+        # This plugin doesn't handle any special package types, it just
+        # extends the default `dataset` package type
+        return []
