@@ -46,7 +46,8 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
         )
 
     def configure(self, config):
-
+        log.info("CloudStoragePlugin: Starting configuration")
+        
         required_keys = (
             'ckanext.cloudstorage.driver',
             'ckanext.cloudstorage.driver_options',
@@ -54,16 +55,27 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
         )
 
         for rk in required_keys:
-            if config.get(rk) is None:
+            value = config.get(rk)
+            if value is None:
+                log.error(f"CloudStoragePlugin: Missing required configuration: {rk}")
                 raise RuntimeError(
                     'Required configuration option {0} not found.'.format(
                         rk
                     )
                 )
+            else:
+                log.info(f"CloudStoragePlugin: Found config {rk} = {value[:50]}..." if len(str(value)) > 50 else f"CloudStoragePlugin: Found config {rk} = {value}")
 
     def get_resource_uploader(self, data_dict):
         # We provide a custom Resource uploader.
-        return storage.ResourceCloudStorage(data_dict)
+        try:
+            log.debug(f"CloudStoragePlugin: Creating ResourceCloudStorage uploader")
+            uploader = storage.ResourceCloudStorage(data_dict)
+            log.debug(f"CloudStoragePlugin: Successfully created uploader")
+            return uploader
+        except Exception as e:
+            log.error(f"CloudStoragePlugin: Failed to create uploader: {e}")
+            raise
 
     def get_uploader(self, upload_to, old_filename=None):
         # We don't provide misc-file storage (group images for example)

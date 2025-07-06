@@ -34,19 +34,29 @@ def _get_underlying_file(wrapper):
 
 class CloudStorage(object):
     def __init__(self):
-        self._driver_options = literal_eval(config['ckanext.cloudstorage.driver_options'])
+        try:
+            driver_options_str = config.get('ckanext.cloudstorage.driver_options', '{}')
+            self._driver_options = literal_eval(driver_options_str)
+        except (ValueError, SyntaxError) as e:
+            log.error(f"Failed to parse driver_options: {driver_options_str}. Error: {e}")
+            raise RuntimeError(f"Invalid driver_options format. Must be a valid Python dict string. Error: {e}")
+            
         if 'S3' in self.driver_name and not self.driver_options:
             if self.aws_use_boto3_sessions:
                 self.authenticate_with_aws_boto3()
             else:
                 self.authenticate_with_aws()
 
-        self.driver = get_driver(
-            getattr(
-                Provider,
-                self.driver_name
-            )
-        )(**self.driver_options)
+        try:
+            provider_const = getattr(Provider, self.driver_name, None)
+            if provider_const is None:
+                raise RuntimeError(f"Unknown storage driver: {self.driver_name}. Check available providers in libcloud.storage.types.Provider")
+                
+            self.driver = get_driver(provider_const)(**self.driver_options)
+        except Exception as e:
+            log.error(f"Failed to initialize storage driver '{self.driver_name}': {e}")
+            raise RuntimeError(f"Failed to initialize storage driver '{self.driver_name}': {e}")
+            
         self._container = None
 
     def path_from_filename(self, rid, filename):
@@ -63,12 +73,16 @@ class CloudStorage(object):
                                'token': credentials['Token'],
                                'expires': credentials['Expiration']}
 
-        self.driver = get_driver(
-            getattr(
-                Provider,
-                self.driver_name
-            )
-        )(**self.driver_options)
+        try:
+            provider_const = getattr(Provider, self.driver_name, None)
+            if provider_const is None:
+                raise RuntimeError(f"Unknown storage driver: {self.driver_name}. Check available providers in libcloud.storage.types.Provider")
+                
+            self.driver = get_driver(provider_const)(**self.driver_options)
+        except Exception as e:
+            log.error(f"Failed to initialize storage driver '{self.driver_name}': {e}")
+            raise RuntimeError(f"Failed to initialize storage driver '{self.driver_name}': {e}")
+            
         self._container = None
 
     def authenticate_with_aws_boto3(self):
@@ -85,12 +99,16 @@ class CloudStorage(object):
                                'token': current_credentials.token,
                                'expires': datetime.fromtimestamp(time() + 900).strftime('%Y-%m-%dT%H:%M:%SZ')}
 
-        self.driver = get_driver(
-            getattr(
-                Provider,
-                self.driver_name
-            )
-        )(**self.driver_options)
+        try:
+            provider_const = getattr(Provider, self.driver_name, None)
+            if provider_const is None:
+                raise RuntimeError(f"Unknown storage driver: {self.driver_name}. Check available providers in libcloud.storage.types.Provider")
+                
+            self.driver = get_driver(provider_const)(**self.driver_options)
+        except Exception as e:
+            log.error(f"Failed to initialize storage driver '{self.driver_name}': {e}")
+            raise RuntimeError(f"Failed to initialize storage driver '{self.driver_name}': {e}")
+            
         self._container = None
 
     @property

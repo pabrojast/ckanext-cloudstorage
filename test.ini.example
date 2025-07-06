@@ -1,0 +1,56 @@
+# Example CloudStorage Configuration for Testing
+# Add these lines to your CKAN configuration file (production.ini or development.ini)
+
+# Required: Add cloudstorage to the list of plugins
+ckan.plugins = stats text_view image_view recline_view datastore datapusher cloudstorage
+
+# CloudStorage Configuration
+# ==========================
+
+# Option 1: AWS S3
+# ----------------
+ckanext.cloudstorage.driver = S3
+ckanext.cloudstorage.driver_options = {"key": "YOUR_ACCESS_KEY", "secret": "YOUR_SECRET_KEY"}
+ckanext.cloudstorage.container_name = your-s3-bucket-name
+
+# Option 2: Azure Blob Storage
+# ----------------------------
+# ckanext.cloudstorage.driver = AZURE_BLOBS
+# ckanext.cloudstorage.driver_options = {"key": "STORAGE_ACCOUNT_NAME", "secret": "STORAGE_ACCOUNT_KEY"}
+# ckanext.cloudstorage.container_name = your-container-name
+
+# Option 3: Local Storage (for testing)
+# -------------------------------------
+# ckanext.cloudstorage.driver = LOCAL
+# ckanext.cloudstorage.driver_options = {"key": "/path/to/storage"}
+# ckanext.cloudstorage.container_name = local-container
+
+# Optional Features
+# -----------------
+
+# Enable secure URLs (requires multipart upload database tables)
+# ckanext.cloudstorage.use_secure_urls = true
+
+# Enable Azure direct upload (bypasses gateway for large files)
+# ckanext.cloudstorage.azure_direct_upload = true
+
+# Enable enhanced upload interface
+# ckanext.cloudstorage.use_enhanced_upload = true
+
+# Set maximum days for multipart uploads (default: 7)
+# ckanext.cloudstorage.max_multipart_lifetime = 7
+
+# Leave files in cloud storage when resources are deleted
+# ckanext.cloudstorage.leave_files = false
+
+# Guess mime types for uploaded files
+# ckanext.cloudstorage.guess_mimetype = true
+
+# AWS-specific: Use boto3 sessions for authentication
+# ckanext.cloudstorage.aws_use_boto3_sessions = true
+
+# IMPORTANT NOTES:
+# 1. Driver names are CASE SENSITIVE (S3, not s3)
+# 2. driver_options must be a valid Python dictionary string
+# 3. Make sure your container/bucket exists before starting CKAN
+# 4. For secure URLs, run: ckan cloudstorage initdb

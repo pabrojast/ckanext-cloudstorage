@@ -28,10 +28,11 @@ ckan.module('cloudstorage-multipart-upload', function($, _) {
             $.proxyAll(this, /_on/);
             this.options.packageId = this.options.packageId.slice(1);
             this._form = this.$('form');
-            // this._origin = $('#field-image-upload');
-            // this._file = this._origin.clone()
-            this._file = $('#field-image-upload');
-            this._url = $('#field-image-url');
+            // Support both default field IDs and custom ones passed as options
+            var uploadFieldId = this.options.fieldUpload || 'field-image-upload';
+            var urlFieldId = this.options.fieldUrl || 'field-image-url';
+            this._file = $('#' + uploadFieldId);
+            this._url = $('#' + urlFieldId);
             this._save = $('[name=save]');
             this._id = $('input[name=id]');
             this._progress = $('<div>', {

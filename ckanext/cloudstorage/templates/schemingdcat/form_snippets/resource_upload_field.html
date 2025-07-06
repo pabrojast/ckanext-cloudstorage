@@ -1,0 +1,41 @@
+{#
+  CloudStorage Resource Upload Field Override for SchemingDCAT
+  
+  This template overrides the schemingdcat resource upload field to integrate
+  cloud storage functionality while maintaining the correct field IDs.
+#}
+
+{# Only wrap with cloudstorage module if cloud storage is configured #}
+{% if h.cloudstorage_use_azure_direct_upload() or h.cloudstorage_use_secure_urls() %}
+  {% set pkg_name = data.get('package_id', pkg_name) %}
+  
+  <div class="resource-upload-field"
+    {% if h.cloudstorage_use_azure_direct_upload() -%}
+      data-module="cloudstorage-azure-direct-upload"
+      data-module-package-id="_{{ pkg_name }}"
+      data-module-field-upload="field-resource-upload"
+      data-module-field-url="field-resource-url"
+    {%- elif h.cloudstorage_use_secure_urls() -%}
+      data-module="cloudstorage-multipart-upload"
+      data-module-cloud='S3'
+      data-module-package-id="_{{ pkg_name }}"
+      data-module-field-upload="field-resource-upload"
+      data-module-field-url="field-resource-url"
+    {%- endif %}
+  >
+    {# Include the original template content #}
+    {% include "schemingdcat/form_snippets/resource_upload_field.html" %}
+  </div>
+  
+  {# Include the cloudstorage JavaScript assets #}
+  {% asset 'cloudstorage-js/cloudstorage-multipart-upload' %}
+  {% if h.cloudstorage_use_azure_direct_upload() %}
+    {% asset 'cloudstorage-js/cloudstorage-azure-direct-upload' %}
+  {% endif %}
+  {% if h.cloudstorage_use_enhanced_upload() %}
+    {% asset 'cloudstorage-js/cloudstorage-enhanced-upload' %}
+  {% endif %}
+{% else %}
+  {# If cloud storage is not configured, use the original template #}
+  {% include "schemingdcat/form_snippets/resource_upload_field.html" %}
+{% endif %}

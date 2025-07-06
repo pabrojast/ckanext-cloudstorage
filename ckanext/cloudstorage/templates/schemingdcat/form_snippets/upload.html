@@ -18,43 +18,58 @@
 {%- set upload_label = h.scheming_language_text(field.upload_label) or _('Upload') -%}
 {%- set url_label = h.scheming_language_text(field.label) -%}
 
+{# Determine if this is a resource context (resources use different field IDs) #}
+{%- set is_resource = (field.field_name == 'url' and field.upload_field == 'upload') -%}
+{%- set field_upload_id = 'field-resource-upload' if is_resource else 'field-image-upload' -%}
+{%- set field_url_id = 'field-resource-url' if is_resource else 'field-image-url' -%}
+
 {# Check if we should use enhanced upload #}
 {% if h.cloudstorage_use_enhanced_upload() %}
   {# Use the enhanced upload interface #}
   {% include 'cloudstorage/snippets/fileupload.html' %}
 {% else %}
-  {# Wrap standard upload with cloudstorage module #}
-  <div
-    {% if h.cloudstorage_use_azure_direct_upload() -%}
-      data-module="cloudstorage-azure-direct-upload"
-      data-module-package-id="_{{ pkg_name }}"
-    {%- elif h.cloudstorage_use_secure_urls() -%}
-      data-module="cloudstorage-multipart-upload"
-      data-module-cloud='S3'
-      data-module-package-id="_{{ pkg_name }}"
-    {%- endif %}
-  >
-    {# Render the standard upload field #}
-    {%- set is_upload = (data.get(field.upload_field) or data.get('url_type') == 'upload') -%}
-    {% call form.image_upload(
-        data,
-        errors,
-        field_url=field.field_name,
-        field_upload=field.upload_field,
-        field_clear=field.upload_clear,
-        is_upload_enabled=h.uploads_enabled(),
-        is_url=data[field.field_name] and not is_upload,
-        is_upload=is_upload,
-        upload_label=upload_label,
-        url_label=url_label,
-        classes=field.classes if 'classes' in field else ['control-medium'],
-        attrs=dict({"class": "form-control"}, **(field.get('form_attrs', {}))),
-        placeholder=field.form_placeholder
-        ) 
-    %}
-      {%- snippet 'scheming/form_snippets/help_text.html', field=field -%}
-    {% endcall %}
-  </div>
+  {# For resources, use the schemingdcat resource upload field template #}
+  {% if is_resource %}
+    {# Include the original schemingdcat resource upload field #}
+    {% include 'schemingdcat/form_snippets/resource_upload_field.html' %}
+  {% else %}
+    {# For non-resources (like images), wrap standard upload with cloudstorage module #}
+    <div
+      {% if h.cloudstorage_use_azure_direct_upload() -%}
+        data-module="cloudstorage-azure-direct-upload"
+        data-module-package-id="_{{ pkg_name }}"
+        data-module-field-upload="{{ field_upload_id }}"
+        data-module-field-url="{{ field_url_id }}"
+      {%- elif h.cloudstorage_use_secure_urls() -%}
+        data-module="cloudstorage-multipart-upload"
+        data-module-cloud='S3'
+        data-module-package-id="_{{ pkg_name }}"
+        data-module-field-upload="{{ field_upload_id }}"
+        data-module-field-url="{{ field_url_id }}"
+      {%- endif %}
+    >
+      {# Render the standard upload field #}
+      {%- set is_upload = (data.get(field.upload_field) or data.get('url_type') == 'upload') -%}
+      {% call form.image_upload(
+          data,
+          errors,
+          field_url=field.field_name,
+          field_upload=field.upload_field,
+          field_clear=field.upload_clear,
+          is_upload_enabled=h.uploads_enabled(),
+          is_url=data[field.field_name] and not is_upload,
+          is_upload=is_upload,
+          upload_label=upload_label,
+          url_label=url_label,
+          classes=field.classes if 'classes' in field else ['control-medium'],
+          attrs=dict({"class": "form-control"}, **(field.get('form_attrs', {}))),
+          placeholder=field.form_placeholder
+          ) 
+      %}
+        {%- snippet 'scheming/form_snippets/help_text.html', field=field -%}
+      {% endcall %}
+    </div>
+  {% endif %}
 {% endif %}
 
 {# Include the cloudstorage JavaScript assets #}
