@@ -4,7 +4,9 @@
       "Bash(grep:*)",
       "Bash(find:*)",
       "WebFetch(domain:docs.ckan.org)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

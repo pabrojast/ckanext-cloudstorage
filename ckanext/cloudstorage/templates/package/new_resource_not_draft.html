@@ -1,7 +1,11 @@
 {% ckan_extends %}
 
+{% set errors = errors or {} %}
+{% set data = data or {} %}
 
 {% block form %}
-
-     {% snippet 'cloudstorage/snippets/multipart_module.html', pkg_name=pkg_name, parent=super %}
+  {{ super() }}
+  {% set use_multipart = h.cloudstorage_use_secure_urls() %}
+  {% set use_azure_direct = h.cloudstorage_use_azure_direct_upload() %}
+  {% snippet 'cloudstorage/snippets/multipart_module.html', pkg_name=pkg_dict.name, use_multipart=use_multipart, use_azure_direct=use_azure_direct %}
 {% endblock %}
