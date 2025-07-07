@@ -1,0 +1,20 @@
+{% ckan_extends %}
+
+{# Override to include cloudstorage JavaScript modules after the form is rendered #}
+{% block form_actions %}
+  {{ super() }}
+  
+  {# Include cloudstorage upload modules #}
+  {% set use_multipart = h.cloudstorage_use_secure_urls() %}
+  {% set use_azure_direct = h.cloudstorage_use_azure_direct_upload() %}
+  {% set use_enhanced = h.cloudstorage_use_enhanced_upload() %}
+  
+  {# Determine which JavaScript module to load based on configuration #}
+  {% if use_azure_direct %}
+    {% snippet 'cloudstorage/snippets/azure_direct_module.html', pkg_name=pkg_name or pkg_dict.name, resource_id=resource_id or res.id if res else None %}
+  {% elif use_enhanced %}
+    {% snippet 'cloudstorage/snippets/enhanced_module.html', pkg_name=pkg_name or pkg_dict.name, resource_id=resource_id or res.id if res else None %}
+  {% elif use_multipart %}
+    {% snippet 'cloudstorage/snippets/multipart_module.html', pkg_name=pkg_name or pkg_dict.name, resource_id=resource_id or res.id if res else None %}
+  {% endif %}
+{% endblock %}

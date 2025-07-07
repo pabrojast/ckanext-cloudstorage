@@ -1,9 +1,9 @@
-{# Multipart Upload Module #}
+{# Azure Direct Upload Module #}
 {% asset 'cloudstorage-js/main' %}
 
 <script>
   $(document).ready(function() {
-    // Initialize Multipart Upload for file input fields
+    // Initialize Azure Direct Upload for file input fields
     var $fileInputs = $('input[type="file"][name="upload"]');
     
     if ($fileInputs.length > 0) {
@@ -11,13 +11,11 @@
         var $input = $(this);
         var $form = $input.closest('form');
         
-        // Add data attributes for Multipart Upload module
+        // Add data attributes for Azure Direct Upload module
         $input.attr({
-          'data-module': 'cloudstorage-multipart-upload',
-          'data-module-cloud': 'S3',
+          'data-module': 'cloudstorage-azure-direct-upload',
           'data-module-pkg_name': '{{ pkg_name }}',
-          'data-module-resource_id': '{{ resource_id or "" }}',
-          'data-module-package-id': '_{{ pkg_name }}'
+          'data-module-resource_id': '{{ resource_id or "" }}'
         });
         
         // Initialize the module

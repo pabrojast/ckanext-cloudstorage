@@ -157,6 +157,10 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
 
     # IDatasetForm
 
+    def resource_form(self):
+        # Override the resource form to use cloudstorage template
+        return 'package/snippets/resource_form.html'
+
     def is_fallback(self):
         # Return True to handle all package types as a fallback
         return True
