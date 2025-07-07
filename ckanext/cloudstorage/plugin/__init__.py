@@ -34,6 +34,8 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
     def update_config(self, config):
         plugins.toolkit.add_template_directory(config, 'templates')
         plugins.toolkit.add_resource('fanstatic/scripts', 'cloudstorage-js')
+        # Also add the general fanstatic directory for compatibility
+        plugins.toolkit.add_resource('fanstatic', 'cloudstorage')
 
     # ITemplateHelpers
 
