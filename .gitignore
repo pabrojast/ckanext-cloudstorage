@@ -19,3 +19,5 @@ fl_notes.txt
 .noseids
 *~
 ckanext_cloudstorage.egg-info/**
+ckanext-blob-storage/*
+ckanext-schemingdcat/*
