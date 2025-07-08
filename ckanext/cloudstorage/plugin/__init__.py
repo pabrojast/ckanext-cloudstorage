@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 from ckan import plugins
+import ckan.plugins.toolkit as toolkit
 import os.path
 from ckanext.cloudstorage import storage
 from ckanext.cloudstorage import helpers
@@ -19,7 +20,7 @@ else:
     from ckanext.cloudstorage.plugin.pylons_plugin import MixinPlugin
 
 
-class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
+class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin, toolkit.DefaultDatasetForm):
     plugins.implements(plugins.IUploader)
     plugins.implements(plugins.IConfigurable)
     plugins.implements(plugins.IConfigurer)
@@ -27,15 +28,15 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
     plugins.implements(plugins.ITemplateHelpers)
     plugins.implements(plugins.IAuthFunctions)
     plugins.implements(plugins.IResourceController, inherit=True)
-    plugins.implements(plugins.IDatasetForm, inherit=True)
+    plugins.implements(plugins.IDatasetForm)
 
     # IConfigurer
 
     def update_config(self, config):
-        plugins.toolkit.add_template_directory(config, 'templates')
-        plugins.toolkit.add_resource('fanstatic/scripts', 'cloudstorage-js')
-        # Also add the general fanstatic directory for compatibility
-        plugins.toolkit.add_resource('fanstatic', 'cloudstorage')
+        toolkit.add_template_directory(config, 'templates')
+        toolkit.add_public_directory(config, 'public')
+        toolkit.add_resource('fanstatic/scripts', 'cloudstorage-js')
+        toolkit.add_resource('fanstatic', 'cloudstorage')
 
     # ITemplateHelpers
 
@@ -160,25 +161,65 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
     # IDatasetForm
 
     def is_fallback(self):
-        # Return True to handle all package types as a fallback
+        # Return True to register this plugin as the default handler for
+        # package types not handled by any other IDatasetForm plugin.
         return True
 
     def package_types(self):
-        # Return empty list when acting as fallback
-        # This allows us to handle all package types not explicitly claimed
+        # This plugin doesn't handle any special package types, it just
+        # registers itself as the default (above).
         return []
 
     def create_package_schema(self):
         # Get the default schema and extend it for cloud storage
         schema = super(CloudStoragePlugin, self).create_package_schema()
+        
+        # Add cloud storage specific fields
+        schema['resources'].update({
+            'upload_url': [
+                toolkit.get_validator('ignore_missing'),
+                toolkit.get_converter('convert_to_extras')
+            ],
+            'cloud_storage_type': [
+                toolkit.get_validator('ignore_missing'),
+                toolkit.get_converter('convert_to_extras')
+            ]
+        })
+        
         return schema
 
     def update_package_schema(self):
         # Get the default schema and extend it for cloud storage
         schema = super(CloudStoragePlugin, self).update_package_schema()
+        
+        # Add cloud storage specific fields
+        schema['resources'].update({
+            'upload_url': [
+                toolkit.get_validator('ignore_missing'),
+                toolkit.get_converter('convert_to_extras')
+            ],
+            'cloud_storage_type': [
+                toolkit.get_validator('ignore_missing'),
+                toolkit.get_converter('convert_to_extras')
+            ]
+        })
+        
         return schema
 
     def show_package_schema(self):
         # Get the default schema for showing packages
         schema = super(CloudStoragePlugin, self).show_package_schema()
+        
+        # Add cloud storage specific fields
+        schema['resources'].update({
+            'upload_url': [
+                toolkit.get_converter('convert_from_extras'),
+                toolkit.get_validator('ignore_missing')
+            ],
+            'cloud_storage_type': [
+                toolkit.get_converter('convert_from_extras'),
+                toolkit.get_validator('ignore_missing')
+            ]
+        })
+        
         return schema

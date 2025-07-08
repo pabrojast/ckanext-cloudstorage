@@ -1,0 +1,13 @@
+cloudstorage-resource-editor-css:
+  filter: cssrewrite
+  output: ckanext-cloudstorage/%(version)s_resource_editor.css
+  contents:
+    - css/resource-editor.css
+
+cloudstorage-resource-editor-js:
+  filter: rjsmin
+  output: ckanext-cloudstorage/%(version)s_resource_editor.js
+  contents:
+    - scripts/resource-editor.js
+    - scripts/cloudstorage-azure-direct-upload.js
+    - scripts/cloudstorage-multipart-upload.js 

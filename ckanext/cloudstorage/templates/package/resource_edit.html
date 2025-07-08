@@ -1,5 +1,12 @@
 {% ckan_extends %}
 
+{% set package_id = pkg.id %}
+{% set resource_id = res.id %}
+
 {% block form %}
-  {% snippet 'cloudstorage/snippets/resource_form.html', data=data, errors=errors, error_summary=error_summary %}
+  {% snippet 'cloudstorage/snippets/resource_editor_module.html', 
+             pkg_id=package_id,
+             resource_id=resource_id,
+             api_key=c.userobj.apikey, 
+             base_url=g.site_url %}
 {% endblock %}
