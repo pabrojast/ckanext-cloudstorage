@@ -1,10 +1,54 @@
-{% ckan_extends %}
+{% extends "package/base.html" %}
 
-{% set package_id = pkg_dict.id %}
+{% set pkg = c.pkg %}
+{% set pkg_dict = h.last_published_dataset(pkg.id) or pkg %}
 
-{% block form %}
-  {% snippet 'cloudstorage/snippets/resource_editor_module.html', 
-             pkg_id=package_id, 
-             api_key=c.userobj.apikey, 
-             base_url=g.site_url %}
+{% block subtitle %}{{ _('Add resource') }} - {{ pkg_dict.title or pkg_dict.name }}{% endblock %}
+
+{% block breadcrumb_content %}
+  {% if pkg_dict.organization %}
+    {% set group = pkg_dict.organization %}
+    <li>{% link_for _('Organizations'), controller='organization', action='index' %}</li>
+    <li>{% link_for group.display_name|truncate(30), controller='organization', action='read', id=group.name %}</li>
+  {% else %}
+    <li>{% link_for _('Datasets'), controller='package', action='search' %}</li>
+  {% endif %}
+  <li>{% link_for pkg_dict.title|truncate(30), controller='package', action='read', id=pkg_dict.name %}</li>
+  <li class="active">{% link_for _('Add New Resource'), controller='package', action='new_resource', id=pkg_dict.name %}</li>
+{% endblock %}
+
+{% block content_action %}
+  {% link_for _('All resources'), controller='package', action='resources', id=pkg.name, class_='btn btn-default', icon='arrow-left' %}
+{% endblock %}
+
+{% block content_primary_nav %}
+  {{ h.build_nav_icon('package.read', _('Dataset'), id=pkg.name) }}
+  {{ h.build_nav_icon('package.groups', _('Groups'), id=pkg.name) }}
+  {{ h.build_nav_icon('package.activity', _('Activity Stream'), id=pkg.name, icon='clock-o') }}
+{% endblock %}
+
+{% block primary_content %}
+  <article class="module">
+    <div class="module-content">
+      <h1 class="page-heading">
+        {% block page_heading %}{{ _('Add resource') }}{% endblock %}
+      </h1>
+      
+      {# CloudStorage Resource Editor - Complete replacement #}
+      {% snippet 'cloudstorage/snippets/resource_editor_module.html', 
+                 pkg_id=pkg_dict.id, 
+                 api_key=c.userobj.apikey, 
+                 base_url=g.site_url %}
+                 
+    </div>
+  </article>
+{% endblock %}
+
+{% block secondary_content %}
+  <section class="module module-narrow module-shallow">
+    <h2 class="module-heading"><i class="fa fa-info-circle"></i> {{ _("What's a resource?") }}</h2>
+    <div class="module-content">
+      <p>{{ _('A resource can be any file or link to a file containing useful data.') }}</p>
+    </div>
+  </section>
 {% endblock %}

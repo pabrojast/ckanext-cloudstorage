@@ -1,12 +1,57 @@
-{% ckan_extends %}
+{% extends "package/base.html" %}
 
-{% set package_id = pkg.id %}
+{% set pkg = c.pkg %}
+{% set res = c.resource %}
 {% set resource_id = res.id %}
 
-{% block form %}
-  {% snippet 'cloudstorage/snippets/resource_editor_module.html', 
-             pkg_id=package_id,
-             resource_id=resource_id,
-             api_key=c.userobj.apikey, 
-             base_url=g.site_url %}
+{% block subtitle %}{{ _('Edit resource') }} - {{ res.name or res.id }}{% endblock %}
+
+{% block breadcrumb_content %}
+  {% if pkg.organization %}
+    {% set group = pkg.organization %}
+    <li>{% link_for _('Organizations'), controller='organization', action='index' %}</li>
+    <li>{% link_for group.display_name|truncate(30), controller='organization', action='read', id=group.name %}</li>
+  {% else %}
+    <li>{% link_for _('Datasets'), controller='package', action='search' %}</li>
+  {% endif %}
+  <li>{% link_for pkg.title|truncate(30), controller='package', action='read', id=pkg.name %}</li>
+  <li>{% link_for res.name|truncate(30), controller='package', action='resource_read', id=pkg.name, resource_id=res.id %}</li>
+  <li class="active">{% link_for _('Edit'), controller='package', action='resource_edit', id=pkg.name, resource_id=res.id %}</li>
+{% endblock %}
+
+{% block content_action %}
+  {% link_for _('View resource'), controller='package', action='resource_read', id=pkg.name, resource_id=res.id, class_='btn btn-default', icon='arrow-left' %}
+{% endblock %}
+
+{% block content_primary_nav %}
+  {{ h.build_nav_icon('package.read', _('Dataset'), id=pkg.name) }}
+  {{ h.build_nav_icon('package.groups', _('Groups'), id=pkg.name) }}
+  {{ h.build_nav_icon('package.activity', _('Activity Stream'), id=pkg.name, icon='clock-o') }}
+{% endblock %}
+
+{% block primary_content %}
+  <article class="module">
+    <div class="module-content">
+      <h1 class="page-heading">
+        {% block page_heading %}{{ _('Edit resource') }}{% endblock %}
+      </h1>
+      
+      {# CloudStorage Resource Editor - Complete replacement #}
+      {% snippet 'cloudstorage/snippets/resource_editor_module.html', 
+                 pkg_id=pkg.id,
+                 resource_id=resource_id,
+                 api_key=c.userobj.apikey, 
+                 base_url=g.site_url %}
+                 
+    </div>
+  </article>
+{% endblock %}
+
+{% block secondary_content %}
+  <section class="module module-narrow module-shallow">
+    <h2 class="module-heading"><i class="fa fa-info-circle"></i> {{ _("What's a resource?") }}</h2>
+    <div class="module-content">
+      <p>{{ _('A resource can be any file or link to a file containing useful data.') }}</p>
+    </div>
+  </section>
 {% endblock %}

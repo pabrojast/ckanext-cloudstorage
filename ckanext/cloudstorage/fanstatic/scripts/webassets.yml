@@ -10,3 +10,17 @@ main:
     - cloudstorage-multipart-upload.js
     - cloudstorage-azure-direct-upload.js
     - cloudstorage-enhanced-upload.js
+
+cloudstorage-resource-editor-css:
+  filter: cssrewrite
+  output: ckanext-cloudstorage/%(version)s_resource_editor.css
+  contents:
+    - ../css/resource-editor.css
+
+cloudstorage-resource-editor-js:
+  filter: rjsmin
+  output: ckanext-cloudstorage/%(version)s_resource_editor.js
+  contents:
+    - resource-editor.js
+    - cloudstorage-azure-direct-upload.js
+    - cloudstorage-multipart-upload.js
