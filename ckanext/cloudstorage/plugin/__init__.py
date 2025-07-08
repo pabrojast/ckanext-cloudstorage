@@ -171,3 +171,26 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
         # Return empty list when acting as fallback
         # This allows us to handle all package types not explicitly claimed
         return []
+
+    def new_template(self):
+        # Override the new resource template
+        return 'package/new_resource.html'
+
+    def edit_template(self):
+        # Override the edit resource template
+        return 'package/resource_edit.html'
+
+    def create_package_schema(self):
+        # Get the default schema and extend it for cloud storage
+        schema = super(CloudStoragePlugin, self).create_package_schema()
+        return schema
+
+    def update_package_schema(self):
+        # Get the default schema and extend it for cloud storage
+        schema = super(CloudStoragePlugin, self).update_package_schema()
+        return schema
+
+    def show_package_schema(self):
+        # Get the default schema for showing packages
+        schema = super(CloudStoragePlugin, self).show_package_schema()
+        return schema

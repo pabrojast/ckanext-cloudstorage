@@ -1,27 +1,87 @@
 {#
-  CloudStorage Resource Form
+  CloudStorage Resource Form Template
   
-  This template extends the schemingdcat resource form to ensure cloud storage
-  functionality is available. The actual integration happens through the
-  schemingdcat/form_snippets/upload.html override.
+  This template provides a complete resource form with cloud storage integration.
 #}
+{% import "macros/form.html" as form %}
 
-{% extends 'schemingdcat/package/snippets/resource_form.html' %}
+<form class="dataset-form dataset-resource-form form-horizontal" method="post" enctype="multipart/form-data">
+  {% block error_summary %}
+    {% if error_summary %}
+      <div class="alert alert-danger">
+        <h4>{{ _('The form contains invalid entries:') }}</h4>
+        {{ error_summary }}
+      </div>
+    {% endif %}
+  {% endblock %}
 
-{# Simply ensure the parent renders and assets are available #}
-{% block basic_fields %}
-  {{ super() }}
-{% endblock %}
+  {% block basic_fields %}
+    {% block basic_fields_name %}
+      {{ form.input('name', id='field-name', label=_('Name'), placeholder=_('eg. January 2011 Gold Prices'), value=data.name, error=errors.name, classes=['control-full']) }}
+    {% endblock %}
 
-{# Ensure compatibility with parent blocks #}
-{% block stages %}
-  {{ super() }}
-{% endblock %}
+    {% block basic_fields_description %}
+      {{ form.markdown('description', id='field-description', label=_('Description'), placeholder=_('Some useful notes about the data'), value=data.description, error=errors.description) }}
+    {% endblock %}
 
-{% block errors %}
-  {{ super() }}
-{% endblock %}
+    {% block basic_fields_url %}
+      {% set is_upload = (data.url_type == 'upload') %}
+      {% set is_url = (data.url_type == 'url') %}
+      {% set is_upload_enabled = h.uploads_enabled() %}
+      
+      {# Use the cloudstorage upload field #}
+      <div class="form-group">
+        {% if is_upload_enabled %}
+          {% snippet 'schemingdcat/form_snippets/resource_upload_field.html', 
+                     data=data, 
+                     errors=errors, 
+                     is_upload=is_upload, 
+                     is_url=is_url, 
+                     is_upload_enabled=is_upload_enabled,
+                     pkg_name=pkg_name %}
+        {% else %}
+          {{ form.input('url', id='field-resource-url', label=_('URL'), placeholder=_('http://example.com/my-data.csv'), value=data.url, error=errors.url, classes=['control-full']) }}
+        {% endif %}
+      </div>
+    {% endblock %}
 
-{% block metadata_fields %}
-  {{ super() }}
-{% endblock %}
+    {% block basic_fields_format %}
+      {% set format_attrs = {'data-module': 'autocomplete', 'data-module-source': '/api/2/util/resource/format_autocomplete?incomplete=?'} %}
+      {{ form.input('format', id='field-format', label=_('Format'), placeholder=_('eg. CSV, XML or JSON'), value=data.format, error=errors.format, classes=['control-medium'], attrs=format_attrs) }}
+    {% endblock %}
+  {% endblock %}
+
+  {% block metadata_fields %}
+    {% block metadata_fields_last_modified %}
+      {{ form.input('last_modified', id='field-last-modified', label=_('Last Modified'), placeholder=_('eg. 2012-06-05'), value=data.last_modified, error=errors.last_modified, classes=['control-medium']) }}
+    {% endblock %}
+
+    {% block metadata_fields_mimetype %}
+      {{ form.input('mimetype', id='field-mimetype', label=_('Media Type'), placeholder=_('eg. application/json'), value=data.mimetype, error=errors.mimetype, classes=['control-medium']) }}
+    {% endblock %}
+
+    {% block metadata_fields_size %}
+      {{ form.input('size', id='field-size', label=_('Size'), placeholder=_('eg. 1024'), value=data.size, error=errors.size, classes=['control-medium']) }}
+    {% endblock %}
+
+    {% block metadata_fields_hash %}
+      {{ form.input('hash', id='field-hash', label=_('Hash'), placeholder=_('eg. b9aae9e1cc6a'), value=data.hash, error=errors.hash, classes=['control-medium']) }}
+    {% endblock %}
+  {% endblock %}
+
+  <div class="form-actions">
+    {% block delete_button %}
+      {% if data.id %}
+        {% if h.check_access('resource_delete', {'id': data.id}) %}
+          <a class="btn btn-danger pull-left" href="{% url_for 'resource.delete', id=data.id %}" data-module="confirm-action" data-module-content="{{ _('Are you sure you want to delete this resource?') }}">{% if stage %}{{ _('Delete') }}{% else %}{{ _('Delete') }}{% endif %}</a>
+        {% endif %}
+      {% endif %}
+    {% endblock %}
+
+    {% block save_button %}
+      <button class="btn btn-primary" type="submit" name="save">
+        {% if stage %}{{ _('Next: Additional Info') }}{% else %}{{ _('Add') }}{% endif %}
+      </button>
+    {% endblock %}
+  </div>
+</form>

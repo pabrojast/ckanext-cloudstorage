@@ -4,8 +4,5 @@
 {% set data = data or {} %}
 
 {% block form %}
-  {{ super() }}
-  {% set use_multipart = h.cloudstorage_use_secure_urls() %}
-  {% set use_azure_direct = h.cloudstorage_use_azure_direct_upload() %}
-  {% snippet 'cloudstorage/snippets/multipart_module.html', pkg_name=pkg_dict.name, use_multipart=use_multipart, use_azure_direct=use_azure_direct %}
+  {% snippet 'cloudstorage/snippets/resource_form.html', data=data, errors=errors, error_summary=error_summary %}
 {% endblock %}

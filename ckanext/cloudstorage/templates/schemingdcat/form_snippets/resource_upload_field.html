@@ -4,30 +4,117 @@
   This template overrides the schemingdcat resource upload field to integrate
   cloud storage functionality while maintaining the correct field IDs.
 #}
+{% import "macros/form.html" as form %}
 
-{# Only wrap with cloudstorage module if cloud storage is configured #}
-{% if h.cloudstorage_use_azure_direct_upload() or h.cloudstorage_use_secure_urls() %}
-  {% set pkg_name = data.get('package_id', pkg_name) %}
-  
-  <div class="resource-upload-field"
-    {% if h.cloudstorage_use_azure_direct_upload() -%}
-      data-module="cloudstorage-azure-direct-upload"
-      data-module-package-id="_{{ pkg_name }}"
-      data-module-field-upload="field-resource-upload"
-      data-module-field-url="field-resource-url"
-    {%- elif h.cloudstorage_use_secure_urls() -%}
-      data-module="cloudstorage-multipart-upload"
-      data-module-cloud='S3'
-      data-module-package-id="_{{ pkg_name }}"
-      data-module-field-upload="field-resource-upload"
-      data-module-field-url="field-resource-url"
-    {%- endif %}
-  >
-    {# Include the original template content #}
-    {% include "schemingdcat/form_snippets/resource_upload_field.html" %}
+{% set first_button = 'resource-upload-button' if is_upload_enabled else 'resource-link-button' %}
+
+{% macro remove_button(js='') %}
+  <button type="button" class="btn btn-danger btn-remove-url"
+    onclick="
+      document.getElementById('resource-url-none').checked = true;
+      document.getElementById('{{ first_button }}').focus();
+      {{ js }}
+    ">{{ _('Remove') }}</button>
+{% endmacro %}
+
+{# Cloud storage wrapper div with appropriate data modules #}
+<div data-module="resource-upload-field" class="resource-upload-field form-group"
+  {% if h.cloudstorage_use_azure_direct_upload() -%}
+    data-module="cloudstorage-azure-direct-upload"
+    data-module-package-id="_{{ data.get('package_id', pkg_name) }}"
+    data-module-field-upload="field-resource-upload"
+    data-module-field-url="field-resource-url"
+  {%- elif h.cloudstorage_use_secure_urls() -%}
+    data-module="cloudstorage-multipart-upload"
+    data-module-cloud='S3'
+    data-module-package-id="_{{ data.get('package_id', pkg_name) }}"
+    data-module-field-upload="field-resource-upload"
+    data-module-field-url="field-resource-url"
+  {%- endif %}
+>
+  <input type="radio" id="resource-url-none" name="url_type" value="" {{
+    'checked' if not data.url and not data.url_type else '' }}>
+  <div class="select-type">
+    <label id="resource-menu-label" class="form-label"
+      >{{ menu_label or _('Data') }}</label>
+    <div role="group" aria-labelledby="resource-menu-label">
+      {% block url_type_select %}
+        {% if is_upload_enabled %}
+          <button type="button" class="btn btn-default" id="resource-upload-button"
+            aria-label="{{ _('Upload a file on your computer') }}" data-bs-title="{{ _('Upload a file on your computer') }}" data-bs-toggle="tooltip"
+            onclick="
+              document.getElementById('resource-url-upload').checked = true;
+              document.getElementById('field-resource-upload').click();
+            "autofocus="true"><i class="fa fa-cloud-upload"></i>{{ _("Upload") }}</button>
+        {% endif %}
+        <button type="button" class="btn btn-default" id="resource-link-button"
+          aria-label="{{ _('Link to a URL on the internet (you can also link to an API)') }}" data-bs-title="{{ _('Link to a URL on the internet (you can also link to an API)') }}" data-bs-toggle="tooltip"
+            onclick="
+              document.getElementById('resource-url-link').checked = true;
+              document.getElementById('field-resource-url').focus();
+            "><i class="fa fa-globe"></i>{{ _('Link') }}</button>
+      {% endblock %}
+    </div>
   </div>
-  
-  {# Include the cloudstorage JavaScript assets #}
+
+  {% block url_type_fields %}
+    {% if is_upload_enabled %}
+      <input type="radio" id="resource-url-upload" name="url_type" value="upload" {{
+        'checked' if is_upload else '' }}>
+      <div class="select-type">
+        {% block upload_controls %}
+          {% if is_upload %}
+            {# for existing uploads we show the file name in a readonly input box #}
+            <input type="checkbox" id="field-clear-upload" value="true">
+            <div class="upload-type">
+              <button type="button" class="btn btn-danger btn-remove-url"
+                onclick="
+                  document.getElementById('field-clear-upload').checked = true;
+                  document.getElementById('field-resource-upload').focus();
+                ">{{ _('Clear Upload') }}</button>
+              <label class="form-label">{{ upload_label or _('File') }}</label>
+              <div class="controls">
+                {% set existing_name = data.get('url', '').split('/')[-1].split('?')[0].split('#')[0] %}
+                <input value="{{ existing_name }}" class="form-control" readonly>
+              </div>
+            </div>
+          {% endif %}
+          <div class="upload-type">
+            {{ remove_button(
+              js="$('#field-resource-upload').replaceWith($('#field-resource-upload').val('').clone(true))") }}
+            {{ form.input(
+              'upload',
+              label=upload_label or _('File'),
+              id='field-resource-upload',
+              type='file',
+              classes=['control-full']) }}
+          </div>
+        {% endblock %}
+      </div>
+    {% endif %}
+
+    <input type="radio" id="resource-url-link" name="url_type" value="" {{
+      'checked' if is_url else '' }}>
+    <div class="select-type">
+      {% block link_controls %}
+        {{ remove_button(
+          js="$('#field-resource-url').val('')") }}
+        {{ form.input(
+          'url',
+          label=url_label or _('URL'),
+          id='field-resource-url',
+          type='url',
+          placeholder=placeholder,
+          value=data.get('url'),
+          error=errors.get('url'),
+          classes=['control-full']) }}
+      {% endblock %}
+    </div>
+  {% endblock %}
+</div>
+
+{# Include the cloudstorage JavaScript assets #}
+{% if h.cloudstorage_use_azure_direct_upload() or h.cloudstorage_use_secure_urls() %}
   {% asset 'cloudstorage-js/cloudstorage-multipart-upload' %}
   {% if h.cloudstorage_use_azure_direct_upload() %}
     {% asset 'cloudstorage-js/cloudstorage-azure-direct-upload' %}
@@ -35,7 +122,4 @@
   {% if h.cloudstorage_use_enhanced_upload() %}
     {% asset 'cloudstorage-js/cloudstorage-enhanced-upload' %}
   {% endif %}
-{% else %}
-  {# If cloud storage is not configured, use the original template #}
-  {% include "schemingdcat/form_snippets/resource_upload_field.html" %}
 {% endif %}
