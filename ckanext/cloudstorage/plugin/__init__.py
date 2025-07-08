@@ -160,6 +160,16 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin, toolkit.DefaultDa
 
     # IDatasetForm
 
+    def resource_form(self):
+        """Devuelve la ruta de la plantilla de formulario de recursos que debe
+        utilizar CKAN.
+
+        Al proporcionar nuestra propia plantilla nos aseguramos de que el
+        formulario incluya la lógica y assets de CloudStorage (multipart, Azure
+        direct upload, subida mejorada, etc.).
+        """
+        return 'cloudstorage/snippets/resource_form.html'
+
     def is_fallback(self):
         # Return True to register this plugin as the default handler for
         # package types not handled by any other IDatasetForm plugin.
