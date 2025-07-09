@@ -1,4 +1,4 @@
-main:
+ain:
   filters: rjsmin
   output: ckanext-cloudstorage/%(version)s_main.js
   extra:

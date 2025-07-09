@@ -1,38 +1,21 @@
 {#
   CloudStorage Resource Editor Module
   
-  This replaces the entire resource form with a custom interface
-  following the blob-storage pattern
+  Complete form replacement similar to blob-storage approach
 #}
-{% asset 'cloudstorage-js/cloudstorage-resource-editor-css' %}
-{% asset 'cloudstorage-js/cloudstorage-resource-editor-js' %}
 
-<div id="CloudStorageResourceEditor"
-     data-package-id="{{ pkg_id }}"
-     data-resource-id="{{ resource_id or '' }}"
-     data-api-token="{{ api_key }}"
-     data-base-url="{{ base_url }}"
-     data-upload-type="{{ 'azure_direct' if h.cloudstorage_use_azure_direct_upload() else 'multipart' }}">
-  
-  {# Fallback content while JavaScript loads #}
-  <div class="cloudstorage-resource-editor">
-    <h2>
-      <i class="fa fa-cloud-upload"></i>
-      {{ _('Loading Resource Editor...') }}
-    </h2>
-    <div style="text-align: center; padding: 40px;">
-      <div class="cloudstorage-loading"></div>
-      <p style="margin-top: 20px; color: #7f8c8d;">
-        {{ _('Please wait while the resource editor loads...') }}
-      </p>
-    </div>
-  </div>
-  
-</div>
+{# Load CloudStorage assets #}
+{% asset 'cloudstorage-js/cloudstorage-multipart-upload' %}
+{% if h.cloudstorage_use_azure_direct_upload() %}
+  {% asset 'cloudstorage-js/cloudstorage-azure-direct-upload' %}
+{% endif %}
+{% if h.cloudstorage_use_enhanced_upload() %}
+  {% asset 'cloudstorage-js/cloudstorage-enhanced-upload' %}
+{% endif %}
 
-<noscript>
-  <div class="alert alert-warning">
-    <h4>{{ _('JavaScript Required') }}</h4>
-    <p>{{ _('The CloudStorage resource editor requires JavaScript to function properly. Please enable JavaScript in your browser and refresh the page.') }}</p>
-  </div>
-</noscript> 
+{# Use the existing CloudStorage resource form #}
+{% snippet 'cloudstorage/snippets/resource_form.html', 
+           data=data or {}, 
+           errors=errors or {}, 
+           pkg_name=pkg_id,
+           stage=stage or [] %} 
