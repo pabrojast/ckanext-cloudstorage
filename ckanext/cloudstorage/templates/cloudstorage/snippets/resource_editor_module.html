@@ -1,7 +1,8 @@
 {#
   CloudStorage Resource Editor Module
   
-  Complete form replacement similar to blob-storage approach
+  Complete page replacement similar to blob-storage
+  This renders a custom form with CloudStorage functionality
 #}
 
 {# Load CloudStorage assets #}
@@ -13,9 +14,248 @@
   {% asset 'cloudstorage-js/cloudstorage-enhanced-upload' %}
 {% endif %}
 
-{# Use the existing CloudStorage resource form #}
-{% snippet 'cloudstorage/snippets/resource_form.html', 
-           data=data or {}, 
-           errors=errors or {}, 
-           pkg_name=pkg_id,
-           stage=stage or [] %} 
+<div id="CloudStorageResourceEditor"
+     data-package-id="{{ pkg_id }}"
+     data-resource-id="{{ resource_id or '' }}"
+     data-api-token="{{ api_key }}"
+     data-base-url="{{ base_url }}"
+     data-upload-type="{{ 'azure_direct' if h.cloudstorage_use_azure_direct_upload() else ('enhanced' if h.cloudstorage_use_enhanced_upload() else 'multipart') }}">
+
+  {# Custom CloudStorage Resource Form #}
+  <form id="cloudstorage-resource-form" class="dataset-form dataset-resource-form" method="post" enctype="multipart/form-data">
+    
+    {# Hidden fields #}
+    <input name="id" value="{{ resource_id or '' }}" type="hidden"/>
+    <input name="package_id" value="{{ pkg_id }}" type="hidden"/>
+    
+    {# CloudStorage Upload Section #}
+    <div class="cloudstorage-upload-section card2 mb-3">
+      <div class="card2-header">
+        <h3 class="mb-0">
+          <i class="fa fa-cloud-upload" style="padding-right:5px;"></i>
+          {{ _('CloudStorage File Upload') }}
+        </h3>
+      </div>
+      <div class="card2-body">
+        
+        {# Upload type indicator #}
+        <div class="alert alert-info">
+          <i class="fa fa-info-circle"></i>
+          {% if h.cloudstorage_use_azure_direct_upload() %}
+            {{ _('Using Azure Direct Upload - files upload directly to Azure Blob Storage') }}
+          {% elif h.cloudstorage_use_enhanced_upload() %}
+            {{ _('Using Enhanced Upload - improved upload experience with progress tracking') }}
+          {% else %}
+            {{ _('Using Multipart Upload - large files are split into chunks for reliable upload') }}
+          {% endif %}
+        </div>
+
+        {# File upload field with CloudStorage module #}
+        <div class="form-group">
+          <label class="form-label" for="cloudstorage-file-upload">{{ _('Select File') }}</label>
+          <input id="cloudstorage-file-upload" 
+                 type="file" 
+                 name="upload" 
+                 class="form-control"
+                 {% if h.cloudstorage_use_azure_direct_upload() %}data-module="cloudstorage-azure-direct-upload"{% elif h.cloudstorage_use_enhanced_upload() %}data-module="cloudstorage-enhanced-upload"{% else %}data-module="cloudstorage-multipart-upload"{% endif %}
+                 data-module-cloud="S3"
+                 data-module-package-id="_{{ pkg_id }}"
+                 data-module-field-upload="cloudstorage-file-upload"
+                 data-module-field-url="cloudstorage-file-url" />
+        </div>
+
+        {# URL field #}
+        <div class="form-group">
+          <label class="form-label" for="cloudstorage-file-url">{{ _('Or provide URL') }}</label>
+          <input id="cloudstorage-file-url" 
+                 type="url" 
+                 name="url" 
+                 class="form-control" 
+                 placeholder="http://example.com/my-data.csv" />
+        </div>
+
+        {# Progress bar (hidden initially) #}
+        <div id="cloudstorage-progress" class="progress" style="display: none;">
+          <div class="progress-bar progress-bar-striped active" style="width: 0%"></div>
+        </div>
+
+      </div>
+    </div>
+
+    {# Resource Metadata Section #}
+    <div class="cloudstorage-metadata-section card2 mb-3">
+      <div class="card2-header">
+        <h3 class="mb-0">
+          <i class="fa fa-info-circle" style="padding-right:5px;"></i>
+          {{ _('Resource Information') }}
+        </h3>
+      </div>
+      <div class="card2-body">
+        
+        {# Name field #}
+        <div class="form-group">
+          <label class="control-label" for="field-name">{{ _('Name') }}</label>
+          <input id="field-name" type="text" name="name" class="form-control" 
+                 placeholder="{{ _('e.g. January 2011 Gold Prices') }}" />
+        </div>
+
+        {# Description field #}
+        <div class="form-group">
+          <label class="control-label" for="field-description">{{ _('Description') }}</label>
+          <textarea id="field-description" name="description" rows="5" class="form-control"
+                    placeholder="{{ _('Some useful notes about the data') }}"></textarea>
+        </div>
+
+        {# Format field #}
+        <div class="form-group">
+          <label class="control-label" for="field-format">{{ _('Format') }}</label>
+          <input id="field-format" type="text" name="format" class="form-control"
+                 placeholder="{{ _('e.g. CSV, XML or JSON') }}"
+                 data-module="autocomplete" 
+                 data-module-source="/api/2/util/resource/format_autocomplete?incomplete=?" />
+        </div>
+
+      </div>
+    </div>
+
+    {# CloudStorage Advanced Options #}
+    <div class="cloudstorage-advanced-section card2 mb-3">
+      <div class="card2-header">
+        <h3 class="mb-0">
+          <i class="fa fa-cogs" style="padding-right:5px;"></i>
+          {{ _('CloudStorage Options') }}
+        </h3>
+      </div>
+      <div class="card2-body">
+        
+        {# Visibility option #}
+        <div class="form-group">
+          <label class="control-label">{{ _('Resource Visibility') }}</label>
+          <div class="controls">
+            <label class="radio">
+              <input type="radio" name="cloudstorage_visibility" value="public" checked>
+              {{ _('Public - Anyone can download this resource') }}
+            </label>
+            <label class="radio">
+              <input type="radio" name="cloudstorage_visibility" value="private">
+              {{ _('Private - Requires authentication to download') }}
+            </label>
+          </div>
+        </div>
+
+        {# Secure URLs option #}
+        {% if h.cloudstorage_use_secure_urls() %}
+        <div class="form-group">
+          <div class="controls">
+            <label class="checkbox">
+              <input type="checkbox" name="use_secure_urls" value="true" checked>
+              {{ _('Generate secure download URLs (recommended for private resources)') }}
+            </label>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Storage type display #}
+        <div class="form-group">
+          <label class="control-label">{{ _('Storage Backend') }}</label>
+          <div class="controls">
+            <span class="form-control-static">
+              <i class="fa fa-cloud"></i>
+              {{ h.cloudstorage_get_cloud_storage_type() or 'Cloud Storage' }}
+            </span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    {# Form Actions #}
+    <div class="form-actions">
+      <button class="btn btn-default" name="save" value="again" type="submit">
+        {{ _('Save & add another') }}
+      </button>
+      <button class="btn btn-primary" name="save" value="go-dataset-complete" type="submit">
+        {{ _('Add') if not resource_id else _('Update') }}
+      </button>
+      {% if resource_id %}
+      <a class="btn btn-danger pull-left" href="#" onclick="return confirm('{{ _('Are you sure you want to delete this resource?') }}')">
+        {{ _('Delete') }}
+      </a>
+      {% endif %}
+    </div>
+
+  </form>
+
+</div>
+
+{# CloudStorage initialization script #}
+<script>
+(function($) {
+  $(document).ready(function() {
+    // Initialize CloudStorage modules
+    var $fileInput = $('#cloudstorage-file-upload');
+    if ($fileInput.length && window.ckan && window.ckan.module) {
+      window.ckan.module.initializeElement($fileInput[0]);
+    }
+    
+    // Auto-populate name from filename
+    $fileInput.on('change', function() {
+      var fileName = this.files[0] ? this.files[0].name : '';
+      var $nameField = $('#field-name');
+      if (fileName && !$nameField.val()) {
+        // Remove extension and clean up filename
+        var cleanName = fileName.replace(/\.[^/.]+$/, "").replace(/[_-]/g, ' ');
+        $nameField.val(cleanName);
+      }
+    });
+    
+    // Show/hide progress bar
+    $(document).on('cloudstorage:upload:start', function() {
+      $('#cloudstorage-progress').show();
+    });
+    
+    $(document).on('cloudstorage:upload:complete', function() {
+      $('#cloudstorage-progress').hide();
+    });
+  });
+})(jQuery);
+</script>
+
+<style>
+.cloudstorage-upload-section .card2-body {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-left: 4px solid #007bff;
+}
+
+.cloudstorage-metadata-section .card2-body {
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  border-left: 4px solid #ffc107;
+}
+
+.cloudstorage-advanced-section .card2-body {
+  background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
+  border-left: 4px solid #17a2b8;
+}
+
+#cloudstorage-file-upload {
+  border: 2px dashed #007bff;
+  padding: 20px;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+#cloudstorage-file-upload:hover {
+  border-color: #0056b3;
+  background-color: #f8f9fa;
+}
+
+.progress {
+  margin-top: 15px;
+  height: 25px;
+}
+
+.progress-bar {
+  line-height: 25px;
+  font-weight: bold;
+}
+</style> 
