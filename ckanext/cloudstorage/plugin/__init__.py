@@ -18,7 +18,7 @@ else:
     from ckanext.cloudstorage.plugin.pylons_plugin import MixinPlugin
 
 
-class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
+class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin, plugins.toolkit.DefaultDatasetForm):
     plugins.implements(plugins.IUploader)
     plugins.implements(plugins.IConfigurable)
     plugins.implements(plugins.IConfigurer)
@@ -26,6 +26,7 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
     plugins.implements(plugins.ITemplateHelpers)
     plugins.implements(plugins.IAuthFunctions)
     plugins.implements(plugins.IResourceController, inherit=True)
+    plugins.implements(plugins.IDatasetForm)
 
     # IConfigurer
 
@@ -37,7 +38,10 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
 
     def get_helpers(self):
         return dict(
-            cloudstorage_use_secure_urls=helpers.use_secure_urls
+            cloudstorage_use_secure_urls=helpers.use_secure_urls,
+            cloudstorage_use_azure_direct_upload=helpers.use_azure_direct_upload,
+            cloudstorage_get_cloud_storage_type=helpers.get_cloud_storage_type,
+            cloudstorage_use_enhanced_upload=helpers.use_enhanced_upload
         )
 
     def configure(self, config):
@@ -135,3 +139,15 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
             for old_file in uploader.container.iterate_objects():
                 if old_file.name.startswith(upload_path):
                     old_file.delete()
+
+    # IDatasetForm
+
+    def is_fallback(self):
+        # Return True to register this plugin as the default handler for
+        # package types not handled by any other IDatasetForm plugin.
+        return True
+
+    def package_types(self):
+        # This plugin doesn't handle any special package types, it just
+        # registers itself as the default (above).
+        return []

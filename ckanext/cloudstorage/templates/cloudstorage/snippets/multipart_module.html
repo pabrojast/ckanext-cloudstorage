@@ -1,9 +1,63 @@
-<div
-    data-module="cloudstorage-multipart-upload"
-    data-module-cloud="AZURE"
-    data-module-package-id="_{{ pkg_name }}"
-    >
-    <!-- DEBUG cloudstorage multipart snippet renderizado -->
-    {{ parent() }}
-
-</div>
+{# Check if enhanced upload is requested #}
+{% if use_enhanced_upload or h.cloudstorage_use_enhanced_upload() %}
+    {% include 'cloudstorage/snippets/fileupload.html' %}
+{% else %}
+    {# Load CloudStorage JavaScript assets #}
+    {% asset 'cloudstorage-js/main' %}
+    
+    <script>
+      $(document).ready(function() {
+        console.log('[cloudstorage] Inicializando módulo multipart');
+        
+        // Esperar a que el formulario esté completamente renderizado
+        setTimeout(function() {
+          var $fileInputs = $('input[type="file"][name="upload"]');
+          console.log('[cloudstorage] Campos de archivo encontrados:', $fileInputs.length);
+          
+          if ($fileInputs.length > 0) {
+            $fileInputs.each(function() {
+              var $input = $(this);
+              var $form = $input.closest('form');
+              
+              // Obtener el nombre del paquete
+              var pkgName = '{{ pkg_name }}' || 
+                            $form.find('input[name="name"]').val() || 
+                            $form.find('input[name="id"]').val() || 
+                            '';
+              
+              // ID del recurso si está editando
+              var resourceId = '{{ resource_id or "" }}';
+              
+              // Determinar qué módulo usar
+              {% if use_azure_direct %}
+                var moduleName = 'cloudstorage-azure-direct-upload';
+              {% elif use_multipart %}
+                var moduleName = 'cloudstorage-multipart-upload';
+              {% else %}
+                // No usar módulo si no está configurado
+                return;
+              {% endif %}
+              
+              console.log('[cloudstorage] Configurando módulo:', moduleName, 'para paquete:', pkgName);
+              
+              // Clonar el input para preservar eventos existentes
+              var $wrapper = $('<div></div>');
+              $input.wrap($wrapper);
+              
+              // Agregar atributos data-module al wrapper
+              $wrapper.attr({
+                'data-module': moduleName,
+                'data-module-cloud': 'S3',
+                'data-module-package-id': '_' + pkgName
+              });
+              
+              // Inicializar el módulo CKAN
+              if (window.ckan && window.ckan.module) {
+                window.ckan.module.initializeElement($wrapper[0]);
+              }
+            });
+          }
+        }, 100);
+      });
+    </script>
+{% endif %}
