@@ -1,6 +1,7 @@
 import os.path
 
-from ckan.plugins.toolkit import c, _, request
+from ckan.plugins.toolkit import c, request
+from ckan.common import _
 import mimetypes
 from ckan import logic, model
 from ckan.lib import base, uploader
