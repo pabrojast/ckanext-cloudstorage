@@ -53,7 +53,7 @@ def resource_download(id, resource_id, filename= None):
     except AttributeError:
         content_type = None
     if not content_type:
-        content_type, _ = mimetypes.guess_type(filename)
+        content_type, encoding = mimetypes.guess_type(filename)
     uploaded_url = upload.get_url_from_filename(resource['id'], filename,
                                                 content_type=content_type)
 
