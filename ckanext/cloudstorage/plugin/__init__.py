@@ -57,8 +57,10 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
                 )
 
     def get_resource_uploader(self, data_dict):
-        # Usamos un DummyUploader para indicar que el archivo será gestionado externamente (p.e. subida directa a Azure)
-        return DummyUploader(data_dict)
+        # Mantenemos ResourceCloudStorage para que CKAN siga resolviendo URLs y metadatos;
+        # el flujo de subida directa evita que el archivo llegue a CKAN, pero es útil
+        # conservar la lógica de almacenamiento para descargas y generación de enlaces.
+        return storage.ResourceCloudStorage(data_dict)
 
     def get_uploader(self, upload_to, old_filename=None):
         # We don't provide misc-file storage (group images for example)
