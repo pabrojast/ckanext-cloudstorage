@@ -8,6 +8,7 @@ import ckanext.cloudstorage.logic.action.multipart as m_action
 import ckanext.cloudstorage.logic.auth.multipart as m_auth
 from ckanext.cloudstorage import views
 import logging
+from ckanext.cloudstorage.uploader import DummyUploader
 
 log = logging.getLogger(__name__)
 
@@ -56,8 +57,8 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin):
                 )
 
     def get_resource_uploader(self, data_dict):
-        # We provide a custom Resource uploader.
-        return storage.ResourceCloudStorage(data_dict)
+        # Usamos un DummyUploader para indicar que el archivo será gestionado externamente (p.e. subida directa a Azure)
+        return DummyUploader(data_dict)
 
     def get_uploader(self, upload_to, old_filename=None):
         # We don't provide misc-file storage (group images for example)

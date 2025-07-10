@@ -4,8 +4,5 @@ from ckanext.cloudstorage.storage import ResourceCloudStorage
 
 
 def use_secure_urls():
-    return all([
-        ResourceCloudStorage.use_secure_urls.fget(None),
-        # Currently implemented just AWS version
-        'S3' in ResourceCloudStorage.driver_name.fget(None)
-    ])
+    # Se habilita el uso de URLs seguras sin restringir al proveedor
+    return ResourceCloudStorage.use_secure_urls.fget(None)
