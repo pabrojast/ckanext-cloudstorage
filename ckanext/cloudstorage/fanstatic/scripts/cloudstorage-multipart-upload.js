@@ -1,6 +1,8 @@
 ckan.module('cloudstorage-multipart-upload', function($, _) {
     'use strict';
 
+    console.log('[cloudstorage] módulo cloudstorage-multipart-upload cargado');
+
     return {
         options: {
             cloud: 'S3',
@@ -25,9 +27,13 @@ ckan.module('cloudstorage-multipart-upload', function($, _) {
         _redirect_url: null,
 
         initialize: function() {
+            console.log('[cloudstorage] inicializando módulo, buscando formulario y elementos');
             $.proxyAll(this, /_on/);
+            console.log('[cloudstorage] opciones recibidas', this.options);
             this.options.packageId = this.options.packageId.slice(1);
+            console.log('[cloudstorage] packageId', this.options.packageId);
             this._form = this.$('form');
+            console.log('[cloudstorage] form encontrado?', this._form && this._form.length);
             // this._origin = $('#field-image-upload');
             // this._file = this._origin.clone()
             this._file = $('#field-image-upload');
@@ -63,6 +69,8 @@ ckan.module('cloudstorage-multipart-upload', function($, _) {
             });
 
             this._save.on('click', this._onSaveClick);
+
+            console.log('[cloudstorage] listeners de carga configurados');
 
             this._onCheckExistingMultipart('choose');
         },
