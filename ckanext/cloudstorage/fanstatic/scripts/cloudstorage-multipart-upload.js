@@ -25,9 +25,6 @@ ckan.module('cloudstorage-multipart-upload', function($, _) {
         _uploadedParts: null,
         _clickedBtn: null,
         _redirect_url: null,
-        // Referencia al objeto data (blueimp) de la subida en curso para poder
-        // abortarla si el usuario cancela
-        _currentUpload: null,
 
         initialize: function() {
             console.log('[cloudstorage] inicializando módulo, buscando formulario y elementos');
@@ -72,15 +69,6 @@ ckan.module('cloudstorage-multipart-upload', function($, _) {
             });
 
             this._save.on('click', this._onSaveClick);
-
-            // Cuando el usuario pulsa cualquiera de los botones de eliminación
-            // (tienen la clase .btn-remove-url) cancelamos la subida multiparte
-            // en curso, abortamos la petición XHR, avisamos al backend para que
-            // limpie las partes y ocultamos la barra de progreso.
-            var self = this;
-            $(document).on('click', '.btn-remove-url', function () {
-                self._onRemoveUpload();
-            });
 
             console.log('[cloudstorage] listeners de carga configurados');
 
@@ -209,8 +197,6 @@ ckan.module('cloudstorage-multipart-upload', function($, _) {
 
         _onFileUploadAdd: function (event, data) {
             this._setProgress(0, this._bar);
-            // Guardamos la referencia a la subida para poder abortarla más tarde
-            this._currentUpload = data;
             var file = data.files[0];
             var target = $(event.target);
 
@@ -464,40 +450,6 @@ ckan.module('cloudstorage-multipart-upload', function($, _) {
 
         _onCleanUpload: function () {
             this.$('.btn-remove-url').trigger('click');
-        },
-
-        /*
-         * Invocado cuando el usuario pulsa el botón "Remove/Clear Upload".
-         * Cancela la subida multipart en curso (tanto en el navegador como en
-         * el backend) y limpia el interfaz.
-         */
-        _onRemoveUpload: function () {
-            // Abortamos cualquier XHR activo asociado a la subida
-            if (this._currentUpload && typeof this._currentUpload.abort === 'function') {
-                try {
-                    this._currentUpload.abort();
-                } catch (e) {
-                    console.warn('[cloudstorage] Error al abortar la petición', e);
-                }
-            }
-
-            // Notificamos al backend para que elimine las partes ya subidas
-            if (this._resourceId) {
-                this._onAbortUpload(this._resourceId);
-            }
-
-            // Limpiamos el estado interno y la interfaz
-            this._progress.addClass('hidden').hide();
-            this._setProgress(0, this._bar);
-            this._onDisableResumeBtn();
-
-            this._uploadId = null;
-            this._resourceId = null;
-            this._uploadedParts = null;
-            this._uploadName = null;
-            this._uploadSize = null;
-            this._partNumber = 1;
-            this._currentUpload = null;
         }
 
     };
