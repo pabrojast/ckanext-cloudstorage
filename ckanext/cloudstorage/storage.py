@@ -257,6 +257,11 @@ class ResourceCloudStorage(CloudStorage):
         upload_field_storage = resource.pop('upload', None)
         self._clear = resource.pop('clear_upload', None)
         multipart_name = resource.pop('multipart_name', None)
+        
+        # Support for Azure Direct Upload - file already uploaded to temp path
+        azure_blob_path = resource.pop('azure_blob_path', None)
+        azure_upload = resource.pop('azure_upload', None)
+        self.azure_temp_path = None
 
         # Check to see if a file has been provided
         if isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)):
@@ -266,6 +271,17 @@ class ResourceCloudStorage(CloudStorage):
                 resource['url'] = self.filename
                 resource['url_type'] = 'upload'
                 resource['last_modified'] = datetime.utcnow()
+        elif azure_blob_path and azure_upload and self.can_use_advanced_azure:
+            # Azure Direct Upload: file is already in Azure at temp path
+            # Extract filename from blob path (temp/{uuid}/{filename})
+            path_parts = azure_blob_path.split('/')
+            if len(path_parts) >= 3 and path_parts[0] == 'temp':
+                self.filename = munge.munge_filename(path_parts[-1])
+                self.azure_temp_path = azure_blob_path
+                resource['url'] = self.filename
+                resource['url_type'] = 'upload'
+                resource['last_modified'] = datetime.utcnow()
+                log.info(f"Azure Direct Upload detected: temp path={azure_blob_path}, filename={self.filename}")
         elif multipart_name and self.can_use_advanced_aws:
             # This means that file was successfully uploaded and stored
             # at cloud.
@@ -322,18 +338,63 @@ class ResourceCloudStorage(CloudStorage):
 
                 svc_client = BlobServiceClient.from_connection_string(self.connection_link)
                 container_client = svc_client.get_container_client(self.container_name)
-                blob_client = container_client.get_blob_client(self.path_from_filename(
-                                                                    id,
-                                                                    self.filename
-                                                                ))
-                stream = self.file_upload
-                blob_client.upload_blob(stream, overwrite=True)
-                if self.guess_mimetype:
-                    content_type, _ = mimetypes.guess_type(self.filename)
-                    if not content_type:
-                        content_type = 'application/octet-stream'
-                    blob_client.set_http_headers(ContentSettings(content_type=content_type))
-                return stream.tell()
+                
+                # Check if this is an Azure Direct Upload (file already in temp path)
+                if self.azure_temp_path:
+                    # File is already in Azure at temp path, just copy/move it to final path
+                    final_path = self.path_from_filename(id, self.filename)
+                    source_blob = container_client.get_blob_client(self.azure_temp_path)
+                    dest_blob = container_client.get_blob_client(final_path)
+                    
+                    log.info(f"Azure Direct Upload: Moving blob from {self.azure_temp_path} to {final_path}")
+                    
+                    try:
+                        # Copy the blob to the final location
+                        dest_blob.start_copy_from_url(source_blob.url)
+                        
+                        # Wait for copy to complete (for small files it's usually instant)
+                        import time
+                        copy_status = dest_blob.get_blob_properties().copy.status
+                        while copy_status == 'pending':
+                            time.sleep(0.5)
+                            copy_status = dest_blob.get_blob_properties().copy.status
+                        
+                        if copy_status == 'success':
+                            # Delete the temp blob
+                            try:
+                                source_blob.delete_blob()
+                                log.info(f"Azure Direct Upload: Deleted temp blob {self.azure_temp_path}")
+                            except Exception as e:
+                                log.warning(f"Azure Direct Upload: Could not delete temp blob: {e}")
+                        else:
+                            log.error(f"Azure Direct Upload: Copy failed with status {copy_status}")
+                            
+                        # Set content type if enabled
+                        if self.guess_mimetype:
+                            content_type, _ = mimetypes.guess_type(self.filename)
+                            if not content_type:
+                                content_type = 'application/octet-stream'
+                            dest_blob.set_http_headers(ContentSettings(content_type=content_type))
+                            
+                        return 0  # No stream to tell()
+                        
+                    except Exception as e:
+                        log.error(f"Azure Direct Upload: Error moving blob: {e}")
+                        raise
+                else:
+                    # Standard upload - file provided via form
+                    blob_client = container_client.get_blob_client(self.path_from_filename(
+                                                                        id,
+                                                                        self.filename
+                                                                    ))
+                    stream = self.file_upload
+                    blob_client.upload_blob(stream, overwrite=True)
+                    if self.guess_mimetype:
+                        content_type, _ = mimetypes.guess_type(self.filename)
+                        if not content_type:
+                            content_type = 'application/octet-stream'
+                        blob_client.set_http_headers(ContentSettings(content_type=content_type))
+                    return stream.tell()
 
             else:
                 # If it's temporary file, we'd better convert it
