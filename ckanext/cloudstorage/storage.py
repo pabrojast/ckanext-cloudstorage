@@ -299,14 +299,20 @@ class ResourceCloudStorage(CloudStorage):
             log.info(f"ResourceCloudStorage init: upload_field_storage type={type(upload_field_storage)}")
 
         # Check to see if a file has been provided
-        if isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)):
-            if len(upload_field_storage.filename):
-                self.filename = munge.munge_filename(upload_field_storage.filename)
-                self.file_upload = _get_underlying_file(upload_field_storage)
-                resource['url'] = self.filename
-                resource['url_type'] = 'upload'
-                resource['last_modified'] = datetime.utcnow()
-                log.info(f"Standard upload detected: filename={self.filename}")
+        # First check for standard file upload (file actually present with a filename)
+        has_standard_upload = (
+            isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)) and 
+            upload_field_storage.filename and 
+            len(upload_field_storage.filename) > 0
+        )
+        
+        if has_standard_upload:
+            self.filename = munge.munge_filename(upload_field_storage.filename)
+            self.file_upload = _get_underlying_file(upload_field_storage)
+            resource['url'] = self.filename
+            resource['url_type'] = 'upload'
+            resource['last_modified'] = datetime.utcnow()
+            log.info(f"Standard upload detected: filename={self.filename}")
         elif azure_blob_path and azure_upload and self.can_use_advanced_azure:
             # Azure Direct Upload: file is already in Azure
             # Path can be temp/{uuid}/{filename} (new resource) or resources/{id}/{filename} (existing resource)
