@@ -27,8 +27,12 @@ import logging
 log = logging.getLogger(__name__)
 
 # Module-level cache for Azure Direct Upload temp paths
-# Key: resource URL (filename), Value: azure_temp_path or 'COMPLETE' if already in final location
+# Key: filename, Value: dict with 'temp_path' and 'filename'
 _azure_upload_cache = {}
+
+# Cache to track completed Azure Direct Uploads (prevent duplicate move attempts)
+# Key: temp_path, Value: final_path (or True if completed)
+_azure_completed_moves = {}
 
 def _get_underlying_file(wrapper):
     if isinstance(wrapper, FlaskFileStorage):
@@ -270,6 +274,7 @@ class ResourceCloudStorage(CloudStorage):
         
         # Check module-level cache first (for when CKAN creates a new uploader instance for upload())
         resource_url = resource.get('url', '')
+        log.info(f"ResourceCloudStorage init: Checking cache, resource_url={resource_url}, cache_keys={list(_azure_upload_cache.keys())}")
         if resource_url and resource_url in _azure_upload_cache:
             cached_value = _azure_upload_cache[resource_url]
             if cached_value == 'COMPLETE':
@@ -416,6 +421,15 @@ class ResourceCloudStorage(CloudStorage):
                 
                 # Check if this is an Azure Direct Upload (file already in temp path)
                 if self.azure_temp_path:
+                    # Check if this temp path was already moved (prevents duplicate move attempts)
+                    if self.azure_temp_path in _azure_completed_moves:
+                        completed_path = _azure_completed_moves[self.azure_temp_path]
+                        log.info(f"Azure Direct Upload: Blob already moved from {self.azure_temp_path} to {completed_path}, skipping")
+                        # Clean up cache
+                        if self.filename in _azure_upload_cache:
+                            del _azure_upload_cache[self.filename]
+                        return 0
+                    
                     # File is already in Azure at temp path, just copy/move it to final path
                     final_path = self.path_from_filename(id, self.filename)
                     source_blob = container_client.get_blob_client(self.azure_temp_path)
@@ -456,6 +470,10 @@ class ResourceCloudStorage(CloudStorage):
                         
                         if copy_status == 'success' or copy_status is None:
                             log.info(f"Azure Direct Upload: Blob copied successfully to {final_path}")
+                            
+                            # Mark this move as completed to prevent duplicate attempts
+                            _azure_completed_moves[self.azure_temp_path] = final_path
+                            
                             # Delete the temp blob
                             try:
                                 source_blob.delete_blob()
