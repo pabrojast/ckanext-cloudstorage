@@ -263,10 +263,10 @@ class ResourceCloudStorage(CloudStorage):
         azure_upload = resource.pop('azure_upload', None)
         self.azure_temp_path = None
         
-        # Debug logging
-        log.debug(f"ResourceCloudStorage init: azure_blob_path={azure_blob_path}, azure_upload={azure_upload}, can_use_advanced_azure={self.can_use_advanced_azure}")
+        # Log what we received (use INFO level to ensure visibility)
+        log.info(f"ResourceCloudStorage init: azure_blob_path={azure_blob_path}, azure_upload={azure_upload}, can_use_advanced_azure={self.can_use_advanced_azure}")
         if upload_field_storage:
-            log.debug(f"ResourceCloudStorage init: upload_field_storage type={type(upload_field_storage)}")
+            log.info(f"ResourceCloudStorage init: upload_field_storage type={type(upload_field_storage)}")
 
         # Check to see if a file has been provided
         if isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)):
