@@ -262,6 +262,11 @@ class ResourceCloudStorage(CloudStorage):
         azure_blob_path = resource.pop('azure_blob_path', None)
         azure_upload = resource.pop('azure_upload', None)
         self.azure_temp_path = None
+        
+        # Debug logging
+        log.debug(f"ResourceCloudStorage init: azure_blob_path={azure_blob_path}, azure_upload={azure_upload}, can_use_advanced_azure={self.can_use_advanced_azure}")
+        if upload_field_storage:
+            log.debug(f"ResourceCloudStorage init: upload_field_storage type={type(upload_field_storage)}")
 
         # Check to see if a file has been provided
         if isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)):
@@ -271,6 +276,7 @@ class ResourceCloudStorage(CloudStorage):
                 resource['url'] = self.filename
                 resource['url_type'] = 'upload'
                 resource['last_modified'] = datetime.utcnow()
+                log.info(f"Standard upload detected: filename={self.filename}")
         elif azure_blob_path and azure_upload and self.can_use_advanced_azure:
             # Azure Direct Upload: file is already in Azure at temp path
             # Extract filename from blob path (temp/{uuid}/{filename})
@@ -282,6 +288,11 @@ class ResourceCloudStorage(CloudStorage):
                 resource['url_type'] = 'upload'
                 resource['last_modified'] = datetime.utcnow()
                 log.info(f"Azure Direct Upload detected: temp path={azure_blob_path}, filename={self.filename}")
+            else:
+                log.warning(f"Azure Direct Upload: Invalid blob path format: {azure_blob_path}")
+        elif azure_blob_path and azure_upload:
+            # Azure upload requested but advanced Azure not available
+            log.warning(f"Azure Direct Upload requested but can_use_advanced_azure={self.can_use_advanced_azure}")
         elif multipart_name and self.can_use_advanced_aws:
             # This means that file was successfully uploaded and stored
             # at cloud.
@@ -349,17 +360,38 @@ class ResourceCloudStorage(CloudStorage):
                     log.info(f"Azure Direct Upload: Moving blob from {self.azure_temp_path} to {final_path}")
                     
                     try:
-                        # Copy the blob to the final location
-                        dest_blob.start_copy_from_url(source_blob.url)
+                        from azure.storage.blob import BlobSasPermissions, generate_blob_sas
+                        
+                        # Generate a SAS token for the source blob (required for copy operation)
+                        permissions = BlobSasPermissions(read=True)
+                        token_expires = datetime.utcnow() + timedelta(hours=1)
+                        sas_token = generate_blob_sas(
+                            account_name=source_blob.account_name,
+                            account_key=source_blob.credential.account_key,
+                            container_name=source_blob.container_name,
+                            blob_name=source_blob.blob_name,
+                            permission=permissions,
+                            expiry=token_expires
+                        )
+                        source_url_with_sas = f"{source_blob.url}?{sas_token}"
+                        
+                        # Copy the blob to the final location using SAS URL
+                        dest_blob.start_copy_from_url(source_url_with_sas)
                         
                         # Wait for copy to complete (for small files it's usually instant)
                         import time
-                        copy_status = dest_blob.get_blob_properties().copy.status
-                        while copy_status == 'pending':
+                        copy_props = dest_blob.get_blob_properties()
+                        copy_status = copy_props.copy.status if copy_props.copy else None
+                        wait_count = 0
+                        max_wait = 60  # Max 30 seconds
+                        while copy_status == 'pending' and wait_count < max_wait:
                             time.sleep(0.5)
-                            copy_status = dest_blob.get_blob_properties().copy.status
+                            wait_count += 1
+                            copy_props = dest_blob.get_blob_properties()
+                            copy_status = copy_props.copy.status if copy_props.copy else 'success'
                         
-                        if copy_status == 'success':
+                        if copy_status == 'success' or copy_status is None:
+                            log.info(f"Azure Direct Upload: Blob copied successfully to {final_path}")
                             # Delete the temp blob
                             try:
                                 source_blob.delete_blob()
