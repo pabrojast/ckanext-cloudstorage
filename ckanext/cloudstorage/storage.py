@@ -26,6 +26,10 @@ import logging
 
 log = logging.getLogger(__name__)
 
+# Module-level cache for Azure Direct Upload temp paths
+# Key: resource URL (filename), Value: azure_temp_path
+_azure_upload_cache = {}
+
 def _get_underlying_file(wrapper):
     if isinstance(wrapper, FlaskFileStorage):
         return wrapper.stream
@@ -263,9 +267,17 @@ class ResourceCloudStorage(CloudStorage):
         azure_upload = resource.pop('azure_upload', None)
         self.azure_temp_path = None
         
-        # Check if azure_temp_path was saved from a previous uploader instance
+        # Check module-level cache first (for when CKAN creates a new uploader instance for upload())
+        resource_url = resource.get('url', '')
+        if resource_url and resource_url in _azure_upload_cache:
+            cached_path = _azure_upload_cache[resource_url]
+            self.azure_temp_path = cached_path
+            self.filename = munge.munge_filename(resource_url.rsplit('/', 1)[-1])
+            log.info(f"ResourceCloudStorage init: Recovered azure_temp_path from cache: {cached_path}, filename={self.filename}")
+        
+        # Also check if azure_temp_path was saved in the resource dict
         saved_azure_temp_path = resource.get('_azure_temp_path')
-        if saved_azure_temp_path and self.can_use_advanced_azure:
+        if saved_azure_temp_path and self.can_use_advanced_azure and not self.azure_temp_path:
             self.azure_temp_path = saved_azure_temp_path
             # Extract filename from saved path
             path_parts = saved_azure_temp_path.split('/')
@@ -291,15 +303,18 @@ class ResourceCloudStorage(CloudStorage):
             # Azure Direct Upload: file is already in Azure at temp path
             # Extract filename from blob path (temp/{uuid}/{filename})
             path_parts = azure_blob_path.split('/')
+            log.info(f"Azure Direct Upload: Processing blob path={azure_blob_path}, parts={path_parts}")
             if len(path_parts) >= 3 and path_parts[0] == 'temp':
                 self.filename = munge.munge_filename(path_parts[-1])
                 self.azure_temp_path = azure_blob_path
                 resource['url'] = self.filename
                 resource['url_type'] = 'upload'
                 resource['last_modified'] = datetime.utcnow()
-                # Store azure_temp_path in resource for persistence between uploader instances
+                # Store in module-level cache for later retrieval
+                _azure_upload_cache[self.filename] = azure_blob_path
+                # Also store in resource dict as backup
                 resource['_azure_temp_path'] = azure_blob_path
-                log.info(f"Azure Direct Upload detected: temp path={azure_blob_path}, filename={self.filename}")
+                log.info(f"Azure Direct Upload detected: temp path={azure_blob_path}, filename={self.filename}, cached for later")
             else:
                 log.warning(f"Azure Direct Upload: Invalid blob path format: {azure_blob_path}")
         elif azure_blob_path and azure_upload:
@@ -425,6 +440,11 @@ class ResourceCloudStorage(CloudStorage):
                         # Clean up the temporary field from resource dict
                         if '_azure_temp_path' in self.resource:
                             del self.resource['_azure_temp_path']
+                        
+                        # Clean up the module-level cache
+                        if self.filename in _azure_upload_cache:
+                            del _azure_upload_cache[self.filename]
+                            log.info(f"Azure Direct Upload: Cleaned up cache for {self.filename}")
                             
                         return 0  # No stream to tell()
                         
