@@ -263,6 +263,16 @@ class ResourceCloudStorage(CloudStorage):
         azure_upload = resource.pop('azure_upload', None)
         self.azure_temp_path = None
         
+        # Check if azure_temp_path was saved from a previous uploader instance
+        saved_azure_temp_path = resource.get('_azure_temp_path')
+        if saved_azure_temp_path and self.can_use_advanced_azure:
+            self.azure_temp_path = saved_azure_temp_path
+            # Extract filename from saved path
+            path_parts = saved_azure_temp_path.split('/')
+            if len(path_parts) >= 1:
+                self.filename = munge.munge_filename(path_parts[-1])
+            log.info(f"ResourceCloudStorage init: Recovered azure_temp_path from resource: {saved_azure_temp_path}, filename={self.filename}")
+        
         # Log what we received (use INFO level to ensure visibility)
         log.info(f"ResourceCloudStorage init: azure_blob_path={azure_blob_path}, azure_upload={azure_upload}, can_use_advanced_azure={self.can_use_advanced_azure}")
         if upload_field_storage:
@@ -287,6 +297,8 @@ class ResourceCloudStorage(CloudStorage):
                 resource['url'] = self.filename
                 resource['url_type'] = 'upload'
                 resource['last_modified'] = datetime.utcnow()
+                # Store azure_temp_path in resource for persistence between uploader instances
+                resource['_azure_temp_path'] = azure_blob_path
                 log.info(f"Azure Direct Upload detected: temp path={azure_blob_path}, filename={self.filename}")
             else:
                 log.warning(f"Azure Direct Upload: Invalid blob path format: {azure_blob_path}")
@@ -409,6 +421,10 @@ class ResourceCloudStorage(CloudStorage):
                             if not content_type:
                                 content_type = 'application/octet-stream'
                             dest_blob.set_http_headers(ContentSettings(content_type=content_type))
+                        
+                        # Clean up the temporary field from resource dict
+                        if '_azure_temp_path' in self.resource:
+                            del self.resource['_azure_temp_path']
                             
                         return 0  # No stream to tell()
                         
