@@ -342,6 +342,8 @@ class ResourceCloudStorage(CloudStorage):
         :param id: The resource_id.
         :param max_size: Ignored.
         """
+        log.info(f"ResourceCloudStorage.upload() called: id={id}, filename={self.filename}, azure_temp_path={self.azure_temp_path}")
+        
         if self.filename:
             if self.can_use_advanced_azure:
                 from azure.storage.blob import ContentSettings  # type: ignore
