@@ -27,7 +27,7 @@ import logging
 log = logging.getLogger(__name__)
 
 # Module-level cache for Azure Direct Upload temp paths
-# Key: resource URL (filename), Value: azure_temp_path
+# Key: resource URL (filename), Value: azure_temp_path or 'COMPLETE' if already in final location
 _azure_upload_cache = {}
 
 def _get_underlying_file(wrapper):
@@ -266,14 +266,22 @@ class ResourceCloudStorage(CloudStorage):
         azure_blob_path = resource.pop('azure_blob_path', None)
         azure_upload = resource.pop('azure_upload', None)
         self.azure_temp_path = None
+        self.azure_direct_complete = False  # Flag for existing resources where file is already in final location
         
         # Check module-level cache first (for when CKAN creates a new uploader instance for upload())
         resource_url = resource.get('url', '')
         if resource_url and resource_url in _azure_upload_cache:
-            cached_path = _azure_upload_cache[resource_url]
-            self.azure_temp_path = cached_path
-            self.filename = munge.munge_filename(resource_url.rsplit('/', 1)[-1])
-            log.info(f"ResourceCloudStorage init: Recovered azure_temp_path from cache: {cached_path}, filename={self.filename}")
+            cached_value = _azure_upload_cache[resource_url]
+            if cached_value == 'COMPLETE':
+                # Existing resource where file is already in final location
+                self.azure_direct_complete = True
+                self.filename = munge.munge_filename(resource_url.rsplit('/', 1)[-1])
+                log.info(f"ResourceCloudStorage init: Recovered COMPLETE status from cache for {self.filename}")
+            else:
+                # New resource with temp path
+                self.azure_temp_path = cached_value
+                self.filename = munge.munge_filename(resource_url.rsplit('/', 1)[-1])
+                log.info(f"ResourceCloudStorage init: Recovered azure_temp_path from cache: {cached_value}, filename={self.filename}")
         
         # Also check if azure_temp_path was saved in the resource dict
         saved_azure_temp_path = resource.get('_azure_temp_path')
@@ -300,11 +308,13 @@ class ResourceCloudStorage(CloudStorage):
                 resource['last_modified'] = datetime.utcnow()
                 log.info(f"Standard upload detected: filename={self.filename}")
         elif azure_blob_path and azure_upload and self.can_use_advanced_azure:
-            # Azure Direct Upload: file is already in Azure at temp path
-            # Extract filename from blob path (temp/{uuid}/{filename})
+            # Azure Direct Upload: file is already in Azure
+            # Path can be temp/{uuid}/{filename} (new resource) or resources/{id}/{filename} (existing resource)
             path_parts = azure_blob_path.split('/')
             log.info(f"Azure Direct Upload: Processing blob path={azure_blob_path}, parts={path_parts}")
+            
             if len(path_parts) >= 3 and path_parts[0] == 'temp':
+                # New resource: file uploaded to temp path, needs to be moved later
                 self.filename = munge.munge_filename(path_parts[-1])
                 self.azure_temp_path = azure_blob_path
                 resource['url'] = self.filename
@@ -314,7 +324,18 @@ class ResourceCloudStorage(CloudStorage):
                 _azure_upload_cache[self.filename] = azure_blob_path
                 # Also store in resource dict as backup
                 resource['_azure_temp_path'] = azure_blob_path
-                log.info(f"Azure Direct Upload detected: temp path={azure_blob_path}, filename={self.filename}, cached for later")
+                log.info(f"Azure Direct Upload (NEW): temp path={azure_blob_path}, filename={self.filename}, cached for later")
+            elif len(path_parts) >= 3 and path_parts[0] == 'resources':
+                # Existing resource: file already uploaded to final path, no move needed
+                self.filename = munge.munge_filename(path_parts[-1])
+                # Mark that upload is already complete - no file_upload means upload() won't try to upload again
+                self.azure_direct_complete = True
+                resource['url'] = self.filename
+                resource['url_type'] = 'upload'
+                resource['last_modified'] = datetime.utcnow()
+                # Store in cache to mark as complete for later uploader instances
+                _azure_upload_cache[self.filename] = 'COMPLETE'
+                log.info(f"Azure Direct Upload (EXISTING): final path={azure_blob_path}, filename={self.filename}, no move needed")
             else:
                 log.warning(f"Azure Direct Upload: Invalid blob path format: {azure_blob_path}")
         elif azure_blob_path and azure_upload:
@@ -369,7 +390,15 @@ class ResourceCloudStorage(CloudStorage):
         :param id: The resource_id.
         :param max_size: Ignored.
         """
-        log.info(f"ResourceCloudStorage.upload() called: id={id}, filename={self.filename}, azure_temp_path={self.azure_temp_path}")
+        log.info(f"ResourceCloudStorage.upload() called: id={id}, filename={self.filename}, azure_temp_path={self.azure_temp_path}, azure_direct_complete={getattr(self, 'azure_direct_complete', False)}")
+        
+        # If Azure Direct Upload to final path is already complete, nothing to do
+        if getattr(self, 'azure_direct_complete', False):
+            log.info(f"Azure Direct Upload: File already in final location, skipping upload for {self.filename}")
+            # Clean up the cache
+            if self.filename in _azure_upload_cache:
+                del _azure_upload_cache[self.filename]
+            return 0
         
         if self.filename:
             if self.can_use_advanced_azure:
