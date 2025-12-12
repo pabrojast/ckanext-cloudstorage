@@ -273,30 +273,38 @@ class ResourceCloudStorage(CloudStorage):
         self.azure_direct_complete = False  # Flag for existing resources where file is already in final location
         
         # Check module-level cache first (for when CKAN creates a new uploader instance for upload())
+        # Priority: 1) Use _azure_cache_key if available, 2) Check url for existing COMPLETE uploads
         resource_url = resource.get('url', '')
-        log.info(f"ResourceCloudStorage init: Checking cache, resource_url={resource_url}, cache_keys={list(_azure_upload_cache.keys())}")
-        if resource_url and resource_url in _azure_upload_cache:
-            cached_value = _azure_upload_cache[resource_url]
+        saved_cache_key = resource.get('_azure_cache_key')
+        
+        log.info(f"ResourceCloudStorage init: Checking cache, resource_url={resource_url}, saved_cache_key={saved_cache_key}, cache_keys={list(_azure_upload_cache.keys())}")
+        
+        # First check if we have a saved cache key from a previous uploader instance
+        if saved_cache_key and saved_cache_key in _azure_upload_cache:
+            cached_value = _azure_upload_cache[saved_cache_key]
             if cached_value == 'COMPLETE':
-                # Existing resource where file is already in final location
+                # Already completed - don't try to move again
                 self.azure_direct_complete = True
-                self.filename = munge.munge_filename(resource_url.rsplit('/', 1)[-1])
-                log.info(f"ResourceCloudStorage init: Recovered COMPLETE status from cache for {self.filename}")
+                self.filename = munge.munge_filename(resource_url.rsplit('/', 1)[-1]) if resource_url else None
+                log.info(f"ResourceCloudStorage init: Recovered COMPLETE status from cache key {saved_cache_key}")
             else:
                 # New resource with temp path
                 self.azure_temp_path = cached_value
-                self.filename = munge.munge_filename(resource_url.rsplit('/', 1)[-1])
-                log.info(f"ResourceCloudStorage init: Recovered azure_temp_path from cache: {cached_value}, filename={self.filename}")
+                path_parts = cached_value.split('/')
+                if len(path_parts) >= 1:
+                    self.filename = munge.munge_filename(path_parts[-1])
+                log.info(f"ResourceCloudStorage init: Recovered azure_temp_path from cache key {saved_cache_key}: {cached_value}")
         
-        # Also check if azure_temp_path was saved in the resource dict
+        # Also check if azure_temp_path was saved in the resource dict (backup mechanism)
         saved_azure_temp_path = resource.get('_azure_temp_path')
-        if saved_azure_temp_path and self.can_use_advanced_azure and not self.azure_temp_path:
+        if saved_azure_temp_path and self.can_use_advanced_azure and not self.azure_temp_path and not self.azure_direct_complete:
+            # Only use this if we haven't already recovered from cache and it's not marked complete
             self.azure_temp_path = saved_azure_temp_path
             # Extract filename from saved path
             path_parts = saved_azure_temp_path.split('/')
             if len(path_parts) >= 1:
                 self.filename = munge.munge_filename(path_parts[-1])
-            log.info(f"ResourceCloudStorage init: Recovered azure_temp_path from resource: {saved_azure_temp_path}, filename={self.filename}")
+            log.info(f"ResourceCloudStorage init: Recovered azure_temp_path from resource dict: {saved_azure_temp_path}, filename={self.filename}")
         
         # Log what we received (use INFO level to ensure visibility)
         log.info(f"ResourceCloudStorage init: azure_blob_path={azure_blob_path}, azure_upload={azure_upload}, can_use_advanced_azure={self.can_use_advanced_azure}")
@@ -326,27 +334,33 @@ class ResourceCloudStorage(CloudStorage):
             
             if len(path_parts) >= 3 and path_parts[0] == 'temp':
                 # New resource: file uploaded to temp path, needs to be moved later
+                temp_uuid = path_parts[1]  # Extract the UUID from temp/{uuid}/{filename}
                 self.filename = munge.munge_filename(path_parts[-1])
                 self.azure_temp_path = azure_blob_path
                 resource['url'] = self.filename
                 resource['url_type'] = 'upload'
                 resource['last_modified'] = datetime.utcnow()
-                # Store in module-level cache for later retrieval
-                _azure_upload_cache[self.filename] = azure_blob_path
-                # Also store in resource dict as backup
+                # Store in module-level cache using temp_uuid as unique key (avoids filename collisions)
+                cache_key = f"temp_{temp_uuid}"
+                _azure_upload_cache[cache_key] = azure_blob_path
+                # Also store in resource dict as backup with unique cache key reference
                 resource['_azure_temp_path'] = azure_blob_path
-                log.info(f"Azure Direct Upload (NEW): temp path={azure_blob_path}, filename={self.filename}, cached for later")
+                resource['_azure_cache_key'] = cache_key
+                log.info(f"Azure Direct Upload (NEW): temp path={azure_blob_path}, filename={self.filename}, cache_key={cache_key}")
             elif len(path_parts) >= 3 and path_parts[0] == 'resources':
                 # Existing resource: file already uploaded to final path, no move needed
+                resource_id = path_parts[1]  # Extract the resource ID from resources/{id}/{filename}
                 self.filename = munge.munge_filename(path_parts[-1])
                 # Mark that upload is already complete - no file_upload means upload() won't try to upload again
                 self.azure_direct_complete = True
                 resource['url'] = self.filename
                 resource['url_type'] = 'upload'
                 resource['last_modified'] = datetime.utcnow()
-                # Store in cache to mark as complete for later uploader instances
-                _azure_upload_cache[self.filename] = 'COMPLETE'
-                log.info(f"Azure Direct Upload (EXISTING): final path={azure_blob_path}, filename={self.filename}, no move needed")
+                # Store in cache to mark as complete for later uploader instances, using resource_id as unique key
+                cache_key = f"existing_{resource_id}"
+                _azure_upload_cache[cache_key] = 'COMPLETE'
+                resource['_azure_cache_key'] = cache_key
+                log.info(f"Azure Direct Upload (EXISTING): final path={azure_blob_path}, filename={self.filename}, cache_key={cache_key}, no move needed")
             else:
                 log.warning(f"Azure Direct Upload: Invalid blob path format: {azure_blob_path}")
         elif azure_blob_path and azure_upload:
@@ -406,9 +420,12 @@ class ResourceCloudStorage(CloudStorage):
         # If Azure Direct Upload to final path is already complete, nothing to do
         if getattr(self, 'azure_direct_complete', False):
             log.info(f"Azure Direct Upload: File already in final location, skipping upload for {self.filename}")
-            # Clean up the cache
-            if self.filename in _azure_upload_cache:
-                del _azure_upload_cache[self.filename]
+            # Clean up the cache using proper cache key
+            saved_cache_key = self.resource.get('_azure_cache_key')
+            if saved_cache_key and saved_cache_key in _azure_upload_cache:
+                del _azure_upload_cache[saved_cache_key]
+            if '_azure_cache_key' in self.resource:
+                del self.resource['_azure_cache_key']
             return 0
         
         if self.filename:
@@ -425,9 +442,14 @@ class ResourceCloudStorage(CloudStorage):
                     if self.azure_temp_path in _azure_completed_moves:
                         completed_path = _azure_completed_moves[self.azure_temp_path]
                         log.info(f"Azure Direct Upload: Blob already moved from {self.azure_temp_path} to {completed_path}, skipping")
-                        # Clean up cache
-                        if self.filename in _azure_upload_cache:
-                            del _azure_upload_cache[self.filename]
+                        # Clean up cache using proper cache key
+                        saved_cache_key = self.resource.get('_azure_cache_key')
+                        if saved_cache_key and saved_cache_key in _azure_upload_cache:
+                            del _azure_upload_cache[saved_cache_key]
+                        if '_azure_temp_path' in self.resource:
+                            del self.resource['_azure_temp_path']
+                        if '_azure_cache_key' in self.resource:
+                            del self.resource['_azure_cache_key']
                         return 0
                     
                     # File is already in Azure at temp path, just copy/move it to final path
@@ -439,6 +461,29 @@ class ResourceCloudStorage(CloudStorage):
                     
                     try:
                         from azure.storage.blob import BlobSasPermissions, generate_blob_sas
+                        
+                        # First, verify the source blob exists before attempting copy
+                        try:
+                            source_blob.get_blob_properties()
+                        except Exception as blob_check_error:
+                            log.warning(f"Azure Direct Upload: Source blob {self.azure_temp_path} does not exist (may have been moved already): {blob_check_error}")
+                            # Mark as completed anyway and clean up
+                            _azure_completed_moves[self.azure_temp_path] = final_path
+                            # Check if the destination blob exists (from a previous successful move)
+                            try:
+                                dest_blob.get_blob_properties()
+                                log.info(f"Azure Direct Upload: Destination blob {final_path} already exists, treating as success")
+                            except:
+                                log.warning(f"Azure Direct Upload: Neither source nor destination blob exists - upload may have failed previously")
+                            # Clean up temp fields
+                            if '_azure_temp_path' in self.resource:
+                                del self.resource['_azure_temp_path']
+                            saved_cache_key = self.resource.get('_azure_cache_key')
+                            if saved_cache_key and saved_cache_key in _azure_upload_cache:
+                                del _azure_upload_cache[saved_cache_key]
+                            if '_azure_cache_key' in self.resource:
+                                del self.resource['_azure_cache_key']
+                            return 0
                         
                         # Generate a SAS token for the source blob (required for copy operation)
                         permissions = BlobSasPermissions(read=True)
@@ -494,10 +539,14 @@ class ResourceCloudStorage(CloudStorage):
                         if '_azure_temp_path' in self.resource:
                             del self.resource['_azure_temp_path']
                         
-                        # Clean up the module-level cache
-                        if self.filename in _azure_upload_cache:
-                            del _azure_upload_cache[self.filename]
-                            log.info(f"Azure Direct Upload: Cleaned up cache for {self.filename}")
+                        # Clean up the module-level cache using the saved cache key
+                        saved_cache_key = self.resource.get('_azure_cache_key')
+                        if saved_cache_key and saved_cache_key in _azure_upload_cache:
+                            del _azure_upload_cache[saved_cache_key]
+                            log.info(f"Azure Direct Upload: Cleaned up cache for key {saved_cache_key}")
+                        
+                        if '_azure_cache_key' in self.resource:
+                            del self.resource['_azure_cache_key']
                             
                         return 0  # No stream to tell()
                         
