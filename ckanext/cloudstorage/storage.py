@@ -8,6 +8,7 @@ from ast import literal_eval
 from datetime import datetime, timedelta
 from time import time
 from tempfile import SpooledTemporaryFile
+import threading
 
 from ckan.plugins.toolkit import config
 from ckan import model
@@ -26,13 +27,113 @@ import logging
 
 log = logging.getLogger(__name__)
 
-# Module-level cache for Azure Direct Upload temp paths
-# Key: filename, Value: dict with 'temp_path' and 'filename'
+# Module-level cache for Azure Direct Upload temp paths (per-process fallback)
+# Key: cache_key (temp_{uuid}), Value: temp_path or 'COMPLETE'
 _azure_upload_cache = {}
 
-# Cache to track completed Azure Direct Uploads (prevent duplicate move attempts)
-# Key: temp_path, Value: final_path (or True if completed)
+# Cache to track completed Azure Direct Uploads (per-process memory cache)
+# Key: temp_path, Value: final_path (for quick lookup within same process)
 _azure_completed_moves = {}
+
+# Lock for thread-safe cache access within a single process
+_cache_lock = threading.Lock()
+
+# Request context tracking to prevent multiple processing in same request
+# Uses Flask's g object when available
+_REQUEST_CONTEXT_KEY = '_cloudstorage_processed_uploads'
+
+
+def _is_upload_processed_in_request(temp_path):
+    """Check if this upload was already processed in the current request."""
+    try:
+        from flask import g
+        if hasattr(g, _REQUEST_CONTEXT_KEY):
+            return temp_path in getattr(g, _REQUEST_CONTEXT_KEY, set())
+    except (RuntimeError, ImportError):
+        pass
+    return False
+
+
+def _mark_upload_processed_in_request(temp_path):
+    """Mark this upload as processed in the current request."""
+    try:
+        from flask import g
+        if not hasattr(g, _REQUEST_CONTEXT_KEY):
+            setattr(g, _REQUEST_CONTEXT_KEY, set())
+        getattr(g, _REQUEST_CONTEXT_KEY).add(temp_path)
+    except (RuntimeError, ImportError):
+        pass
+
+
+def _check_upload_status_db(temp_path):
+    """
+    Check upload status in database.
+    Returns: (status, final_path) or (None, None) if not found.
+    """
+    try:
+        from ckanext.cloudstorage.model import AzureUploadStatus
+        status_record = AzureUploadStatus.get_by_temp_path(temp_path)
+        if status_record:
+            return status_record.status, status_record.final_path
+    except Exception as e:
+        log.debug(f"Could not check upload status in DB: {e}")
+    return None, None
+
+
+def _acquire_move_lock(temp_path, resource_id, final_path):
+    """
+    Try to acquire a lock to move the blob. Uses database for distributed locking.
+    Returns: 'acquired', 'already_locked', or 'completed'
+    """
+    try:
+        from ckanext.cloudstorage.model import AzureUploadStatus
+        
+        # Check if already completed
+        status, existing_final_path = _check_upload_status_db(temp_path)
+        if status == 'completed':
+            return 'completed', existing_final_path
+        if status == 'moving':
+            return 'already_locked', existing_final_path
+        
+        # Try to acquire lock
+        record, is_new = AzureUploadStatus.create_or_lock(temp_path, resource_id, final_path)
+        if is_new:
+            return 'acquired', None
+        elif record and record.status == 'completed':
+            return 'completed', record.final_path
+        else:
+            return 'already_locked', record.final_path if record else None
+            
+    except Exception as e:
+        log.debug(f"Database lock not available, using memory cache: {e}")
+        # Fall back to memory cache
+        with _cache_lock:
+            if temp_path in _azure_completed_moves:
+                return 'completed', _azure_completed_moves[temp_path]
+        return 'acquired', None
+
+
+def _mark_move_completed_db(temp_path, final_path):
+    """Mark the move as completed in the database."""
+    try:
+        from ckanext.cloudstorage.model import AzureUploadStatus
+        AzureUploadStatus.mark_completed(temp_path, final_path)
+    except Exception as e:
+        log.debug(f"Could not mark completion in DB: {e}")
+    
+    # Also update memory cache
+    with _cache_lock:
+        _azure_completed_moves[temp_path] = final_path
+
+
+def _mark_move_failed_db(temp_path):
+    """Mark the move as failed in the database."""
+    try:
+        from ckanext.cloudstorage.model import AzureUploadStatus
+        AzureUploadStatus.mark_failed(temp_path)
+    except Exception as e:
+        log.debug(f"Could not mark failure in DB: {e}")
+
 
 def _get_underlying_file(wrapper):
     if isinstance(wrapper, FlaskFileStorage):
@@ -429,194 +530,14 @@ class ResourceCloudStorage(CloudStorage):
         # If Azure Direct Upload to final path is already complete, nothing to do
         if getattr(self, 'azure_direct_complete', False):
             log.info(f"Azure Direct Upload: File already in final location, skipping upload for {self.filename}")
-            # Clean up the cache using proper cache key
-            saved_cache_key = self.resource.get('_azure_cache_key')
-            if saved_cache_key and saved_cache_key in _azure_upload_cache:
-                del _azure_upload_cache[saved_cache_key]
-            if '_azure_cache_key' in self.resource:
-                del self.resource['_azure_cache_key']
+            self._cleanup_azure_cache()
             return 0
         
         if self.filename:
             if self.can_use_advanced_azure:
-                from azure.storage.blob import ContentSettings  # type: ignore
-                from azure.storage.blob import BlobServiceClient
-
-                svc_client = BlobServiceClient.from_connection_string(self.connection_link)
-                container_client = svc_client.get_container_client(self.container_name)
-                
-                # Check if this is an Azure Direct Upload (file already in temp path)
-                if self.azure_temp_path:
-                    # Check if this temp path was already moved (prevents duplicate move attempts)
-                    if self.azure_temp_path in _azure_completed_moves:
-                        completed_path = _azure_completed_moves[self.azure_temp_path]
-                        log.info(f"Azure Direct Upload: Blob already moved from {self.azure_temp_path} to {completed_path}, skipping")
-                        # Clean up cache using proper cache key
-                        saved_cache_key = self.resource.get('_azure_cache_key')
-                        if saved_cache_key and saved_cache_key in _azure_upload_cache:
-                            del _azure_upload_cache[saved_cache_key]
-                        if '_azure_temp_path' in self.resource:
-                            del self.resource['_azure_temp_path']
-                        if '_azure_cache_key' in self.resource:
-                            del self.resource['_azure_cache_key']
-                        return 0
-                    
-                    # File is already in Azure at temp path, just copy/move it to final path
-                    final_path = self.path_from_filename(id, self.filename)
-                    source_blob = container_client.get_blob_client(self.azure_temp_path)
-                    dest_blob = container_client.get_blob_client(final_path)
-                    
-                    log.info(f"Azure Direct Upload: Moving blob from {self.azure_temp_path} to {final_path}")
-                    
-                    try:
-                        from azure.storage.blob import BlobSasPermissions, generate_blob_sas
-                        
-                        # OPTIMIZATION: First check if destination already exists (another worker may have completed the move)
-                        # This avoids unnecessary source blob checks and reduces warnings in multi-worker environments
-                        try:
-                            dest_blob.get_blob_properties()
-                            # Destination exists - move was already completed by another worker
-                            log.info(f"Azure Direct Upload: Destination blob {final_path} already exists (moved by another worker), skipping")
-                            _azure_completed_moves[self.azure_temp_path] = final_path
-                            # Try to clean up temp blob if it still exists
-                            try:
-                                source_blob.delete_blob()
-                                log.info(f"Azure Direct Upload: Cleaned up orphan temp blob {self.azure_temp_path}")
-                            except:
-                                pass  # Temp blob already deleted, that's fine
-                            # Clean up temp fields
-                            if '_azure_temp_path' in self.resource:
-                                del self.resource['_azure_temp_path']
-                            saved_cache_key = self.resource.get('_azure_cache_key')
-                            if saved_cache_key and saved_cache_key in _azure_upload_cache:
-                                del _azure_upload_cache[saved_cache_key]
-                            if '_azure_cache_key' in self.resource:
-                                del self.resource['_azure_cache_key']
-                            return 0
-                        except Exception:
-                            # Destination doesn't exist, we need to move the blob
-                            pass
-                        
-                        # Now verify the source blob exists before attempting copy
-                        try:
-                            source_blob.get_blob_properties()
-                        except Exception as blob_check_error:
-                            log.warning(f"Azure Direct Upload: Source blob {self.azure_temp_path} does not exist and destination doesn't exist either - upload may have failed")
-                            # Mark as completed anyway and clean up to prevent infinite retries
-                            _azure_completed_moves[self.azure_temp_path] = final_path
-                            # Clean up temp fields
-                            if '_azure_temp_path' in self.resource:
-                                del self.resource['_azure_temp_path']
-                            saved_cache_key = self.resource.get('_azure_cache_key')
-                            if saved_cache_key and saved_cache_key in _azure_upload_cache:
-                                del _azure_upload_cache[saved_cache_key]
-                            if '_azure_cache_key' in self.resource:
-                                del self.resource['_azure_cache_key']
-                            return 0
-                        
-                        # Generate a SAS token for the source blob (required for copy operation)
-                        permissions = BlobSasPermissions(read=True)
-                        token_expires = datetime.utcnow() + timedelta(hours=1)
-                        sas_token = generate_blob_sas(
-                            account_name=source_blob.account_name,
-                            account_key=source_blob.credential.account_key,
-                            container_name=source_blob.container_name,
-                            blob_name=source_blob.blob_name,
-                            permission=permissions,
-                            expiry=token_expires
-                        )
-                        source_url_with_sas = f"{source_blob.url}?{sas_token}"
-                        
-                        # Copy the blob to the final location using SAS URL
-                        dest_blob.start_copy_from_url(source_url_with_sas)
-                        
-                        # Wait for copy to complete (for small files it's usually instant)
-                        import time
-                        copy_props = dest_blob.get_blob_properties()
-                        copy_status = copy_props.copy.status if copy_props.copy else None
-                        wait_count = 0
-                        max_wait = 60  # Max 30 seconds
-                        while copy_status == 'pending' and wait_count < max_wait:
-                            time.sleep(0.5)
-                            wait_count += 1
-                            copy_props = dest_blob.get_blob_properties()
-                            copy_status = copy_props.copy.status if copy_props.copy else 'success'
-                        
-                        if copy_status == 'success' or copy_status is None:
-                            log.info(f"Azure Direct Upload: Blob copied successfully to {final_path}")
-                            
-                            # Mark this move as completed to prevent duplicate attempts
-                            _azure_completed_moves[self.azure_temp_path] = final_path
-                            
-                            # Delete the temp blob
-                            try:
-                                source_blob.delete_blob()
-                                log.info(f"Azure Direct Upload: Deleted temp blob {self.azure_temp_path}")
-                            except Exception as e:
-                                log.warning(f"Azure Direct Upload: Could not delete temp blob: {e}")
-                        else:
-                            log.error(f"Azure Direct Upload: Copy failed with status {copy_status}")
-                            
-                        # Set content type if enabled
-                        if self.guess_mimetype:
-                            content_type, _ = mimetypes.guess_type(self.filename)
-                            if not content_type:
-                                content_type = 'application/octet-stream'
-                            dest_blob.set_http_headers(ContentSettings(content_type=content_type))
-                        
-                        # Clean up the temporary field from resource dict
-                        if '_azure_temp_path' in self.resource:
-                            del self.resource['_azure_temp_path']
-                        
-                        # Clean up the module-level cache using the saved cache key
-                        saved_cache_key = self.resource.get('_azure_cache_key')
-                        if saved_cache_key and saved_cache_key in _azure_upload_cache:
-                            del _azure_upload_cache[saved_cache_key]
-                            log.info(f"Azure Direct Upload: Cleaned up cache for key {saved_cache_key}")
-                        
-                        if '_azure_cache_key' in self.resource:
-                            del self.resource['_azure_cache_key']
-                            
-                        return 0  # No stream to tell()
-                        
-                    except Exception as e:
-                        log.error(f"Azure Direct Upload: Error moving blob: {e}")
-                        raise
-                else:
-                    # Standard upload - file provided via form
-                    blob_client = container_client.get_blob_client(self.path_from_filename(
-                                                                        id,
-                                                                        self.filename
-                                                                    ))
-                    stream = self.file_upload
-                    blob_client.upload_blob(stream, overwrite=True)
-                    if self.guess_mimetype:
-                        content_type, _ = mimetypes.guess_type(self.filename)
-                        if not content_type:
-                            content_type = 'application/octet-stream'
-                        blob_client.set_http_headers(ContentSettings(content_type=content_type))
-                    return stream.tell()
-
+                return self._upload_azure(id)
             else:
-                # If it's temporary file, we'd better convert it
-                # into FileIO. Otherwise libcloud will iterate
-                # over lines, not over chunks and it will really
-                # slow down the process for files that consist of
-                # millions of short linew
-                if isinstance(self.file_upload, SpooledTemporaryFile):
-                    self.file_upload.rollover()
-                    try:
-                        # extract underlying file
-                        file_upload_iter = self.file_upload._file.detach()
-                    except AttributeError:
-                        # It's python2
-                        file_upload_iter = self.file_upload._file
-                else:
-                    file_upload_iter = iter(self.file_upload)
-
-                object_name = self.path_from_filename(id, self.filename)
-                self.container.upload_object_via_stream(iterator=file_upload_iter,
-                                                        object_name=object_name)
+                return self._upload_libcloud(id)
 
         elif self._clear and self.old_filename and not self.leave_files:
             # This is only set when a previously-uploaded file is replace
@@ -635,6 +556,226 @@ class ResourceCloudStorage(CloudStorage):
                 # for it to not yet exist in a committed state due to an
                 # outstanding lease.
                 return
+
+    def _cleanup_azure_cache(self):
+        """Clean up Azure-related cache entries for this resource."""
+        saved_cache_key = self.resource.get('_azure_cache_key')
+        with _cache_lock:
+            if saved_cache_key and saved_cache_key in _azure_upload_cache:
+                del _azure_upload_cache[saved_cache_key]
+        if '_azure_cache_key' in self.resource:
+            del self.resource['_azure_cache_key']
+        if '_azure_temp_path' in self.resource:
+            del self.resource['_azure_temp_path']
+
+    def _upload_azure(self, id):
+        """Handle Azure Blob Storage upload with race condition prevention."""
+        from azure.storage.blob import ContentSettings, BlobServiceClient
+        
+        svc_client = BlobServiceClient.from_connection_string(self.connection_link)
+        container_client = svc_client.get_container_client(self.container_name)
+        
+        # Check if this is an Azure Direct Upload (file already in temp path)
+        if self.azure_temp_path:
+            return self._move_azure_blob(id, container_client)
+        else:
+            # Standard upload - file provided via form
+            return self._upload_azure_standard(id, container_client)
+
+    def _move_azure_blob(self, id, container_client):
+        """
+        Move blob from temp path to final path with distributed locking.
+        Prevents race conditions in multi-worker environments.
+        """
+        from azure.storage.blob import ContentSettings, BlobSasPermissions, generate_blob_sas
+        import time as time_module
+        
+        final_path = self.path_from_filename(id, self.filename)
+        
+        # STEP 1: Check if already processed in this request (prevents duplicate processing)
+        if _is_upload_processed_in_request(self.azure_temp_path):
+            log.info(f"Azure Direct Upload: Already processed in this request, skipping: {self.azure_temp_path}")
+            self._cleanup_azure_cache()
+            return 0
+        
+        # STEP 2: Check memory cache (fast path for same-process duplicates)
+        with _cache_lock:
+            if self.azure_temp_path in _azure_completed_moves:
+                completed_path = _azure_completed_moves[self.azure_temp_path]
+                log.info(f"Azure Direct Upload: Blob already moved (memory cache): {self.azure_temp_path} -> {completed_path}")
+                _mark_upload_processed_in_request(self.azure_temp_path)
+                self._cleanup_azure_cache()
+                return 0
+        
+        # STEP 3: Try to acquire distributed lock (database-backed)
+        lock_status, existing_path = _acquire_move_lock(self.azure_temp_path, id, final_path)
+        
+        if lock_status == 'completed':
+            log.info(f"Azure Direct Upload: Already completed (DB): {self.azure_temp_path} -> {existing_path}")
+            with _cache_lock:
+                _azure_completed_moves[self.azure_temp_path] = existing_path or final_path
+            _mark_upload_processed_in_request(self.azure_temp_path)
+            self._cleanup_azure_cache()
+            return 0
+        
+        if lock_status == 'already_locked':
+            # Another worker is processing this, wait a bit and check destination
+            log.info(f"Azure Direct Upload: Another worker is processing, waiting: {self.azure_temp_path}")
+            time_module.sleep(1)
+            dest_blob = container_client.get_blob_client(final_path)
+            try:
+                dest_blob.get_blob_properties()
+                log.info(f"Azure Direct Upload: Destination exists after wait: {final_path}")
+                _mark_move_completed_db(self.azure_temp_path, final_path)
+                with _cache_lock:
+                    _azure_completed_moves[self.azure_temp_path] = final_path
+                _mark_upload_processed_in_request(self.azure_temp_path)
+                self._cleanup_azure_cache()
+                return 0
+            except Exception:
+                log.warning(f"Azure Direct Upload: Destination not ready after wait, proceeding anyway")
+        
+        # STEP 4: We have the lock, perform the actual move
+        log.info(f"Azure Direct Upload: Acquired lock, moving blob: {self.azure_temp_path} -> {final_path}")
+        
+        source_blob = container_client.get_blob_client(self.azure_temp_path)
+        dest_blob = container_client.get_blob_client(final_path)
+        
+        try:
+            # First check if destination already exists (another worker may have completed)
+            try:
+                dest_blob.get_blob_properties()
+                log.info(f"Azure Direct Upload: Destination already exists: {final_path}")
+                self._finalize_move(self.azure_temp_path, final_path, source_blob)
+                return 0
+            except Exception:
+                pass  # Destination doesn't exist, continue with move
+            
+            # Verify source blob exists
+            try:
+                source_blob.get_blob_properties()
+            except Exception as e:
+                # Source doesn't exist - check if dest exists (race condition)
+                try:
+                    dest_blob.get_blob_properties()
+                    log.info(f"Azure Direct Upload: Source gone but dest exists (race): {final_path}")
+                    self._finalize_move(self.azure_temp_path, final_path, None)
+                    return 0
+                except Exception:
+                    log.warning(f"Azure Direct Upload: Neither source nor dest exists: {self.azure_temp_path}")
+                    _mark_move_failed_db(self.azure_temp_path)
+                    self._cleanup_azure_cache()
+                    return 0
+            
+            # Generate SAS token for copy operation
+            permissions = BlobSasPermissions(read=True)
+            token_expires = datetime.utcnow() + timedelta(hours=1)
+            sas_token = generate_blob_sas(
+                account_name=source_blob.account_name,
+                account_key=source_blob.credential.account_key,
+                container_name=source_blob.container_name,
+                blob_name=source_blob.blob_name,
+                permission=permissions,
+                expiry=token_expires
+            )
+            source_url_with_sas = f"{source_blob.url}?{sas_token}"
+            
+            # Perform the copy
+            dest_blob.start_copy_from_url(source_url_with_sas)
+            
+            # Wait for copy to complete
+            copy_props = dest_blob.get_blob_properties()
+            copy_status = copy_props.copy.status if copy_props.copy else None
+            wait_count = 0
+            max_wait = 60  # Max 30 seconds
+            while copy_status == 'pending' and wait_count < max_wait:
+                time_module.sleep(0.5)
+                wait_count += 1
+                copy_props = dest_blob.get_blob_properties()
+                copy_status = copy_props.copy.status if copy_props.copy else 'success'
+            
+            if copy_status == 'success' or copy_status is None:
+                log.info(f"Azure Direct Upload: Blob copied successfully to {final_path}")
+                self._finalize_move(self.azure_temp_path, final_path, source_blob)
+                
+                # Set content type if enabled
+                if self.guess_mimetype:
+                    content_type, _ = mimetypes.guess_type(self.filename)
+                    if not content_type:
+                        content_type = 'application/octet-stream'
+                    from azure.storage.blob import ContentSettings
+                    dest_blob.set_http_headers(ContentSettings(content_type=content_type))
+            else:
+                log.error(f"Azure Direct Upload: Copy failed with status {copy_status}")
+                _mark_move_failed_db(self.azure_temp_path)
+            
+            return 0
+            
+        except Exception as e:
+            log.error(f"Azure Direct Upload: Error moving blob: {e}")
+            _mark_move_failed_db(self.azure_temp_path)
+            raise
+
+    def _finalize_move(self, temp_path, final_path, source_blob):
+        """Mark move as completed and clean up."""
+        # Mark completed in database
+        _mark_move_completed_db(temp_path, final_path)
+        
+        # Update memory cache
+        with _cache_lock:
+            _azure_completed_moves[temp_path] = final_path
+        
+        # Mark processed in request
+        _mark_upload_processed_in_request(temp_path)
+        
+        # Delete temp blob if we have access
+        if source_blob:
+            try:
+                source_blob.delete_blob()
+                log.info(f"Azure Direct Upload: Deleted temp blob {temp_path}")
+            except Exception as e:
+                log.debug(f"Azure Direct Upload: Could not delete temp blob: {e}")
+        
+        # Clean up cache entries
+        self._cleanup_azure_cache()
+
+    def _upload_azure_standard(self, id, container_client):
+        """Standard Azure upload - file provided via form."""
+        from azure.storage.blob import ContentSettings
+        
+        blob_client = container_client.get_blob_client(
+            self.path_from_filename(id, self.filename)
+        )
+        stream = self.file_upload
+        blob_client.upload_blob(stream, overwrite=True)
+        
+        if self.guess_mimetype:
+            content_type, _ = mimetypes.guess_type(self.filename)
+            if not content_type:
+                content_type = 'application/octet-stream'
+            blob_client.set_http_headers(ContentSettings(content_type=content_type))
+        
+        return stream.tell()
+
+    def _upload_libcloud(self, id):
+        """Upload using libcloud (non-Azure providers)."""
+        # If it's temporary file, we'd better convert it
+        # into FileIO. Otherwise libcloud will iterate
+        # over lines, not over chunks
+        if isinstance(self.file_upload, SpooledTemporaryFile):
+            self.file_upload.rollover()
+            try:
+                file_upload_iter = self.file_upload._file.detach()
+            except AttributeError:
+                file_upload_iter = self.file_upload._file
+        else:
+            file_upload_iter = iter(self.file_upload)
+
+        object_name = self.path_from_filename(id, self.filename)
+        self.container.upload_object_via_stream(
+            iterator=file_upload_iter,
+            object_name=object_name
+        )
 
     def get_url_from_filename(self, rid, filename, content_type=None):
         """

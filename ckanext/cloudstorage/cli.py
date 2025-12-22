@@ -96,3 +96,45 @@ def list_linked_uploads(output):
 def reguess_mimetypes(resource_id=None, verbose=False):
     """Reguess mimtypes for all uploads."""
     utils.reguess_mimetypes(resource_id, verbose)
+
+
+@cloudstorage.command()
+@click.option(
+    '--older-than',
+    default=24,
+    type=int,
+    help='Only clean up blobs older than this many hours (default: 24).',
+)
+@click.option(
+    '--dry-run',
+    is_flag=True,
+    default=False,
+    help='Show what would be deleted without actually deleting.',
+)
+@click.option('-v', '--verbose', is_flag=True, default=False, help='Show detailed output.')
+def cleanup_temp_blobs(older_than, dry_run, verbose):
+    """
+    Remove orphan temporary blobs from Azure storage.
+    
+    This command cleans up blobs in the temp/ directory that were created
+    for Azure Direct Upload but were never moved to their final location.
+    This can happen if an upload is cancelled or fails.
+    """
+    utils.cleanup_temp_blobs(older_than, dry_run, verbose)
+
+
+@cloudstorage.command()
+@click.option(
+    '--older-than',
+    default=24,
+    type=int,
+    help='Only clean up entries older than this many hours (default: 24).',
+)
+def cleanup_upload_status(older_than):
+    """
+    Clean up old entries from the azure_upload_status table.
+    
+    Removes completed and failed upload status records older than
+    the specified number of hours.
+    """
+    utils.cleanup_upload_status(older_than)

@@ -454,3 +454,94 @@ def reguess_mimetypes(resource_id=None, verbose=False):
 
     click.echo(u'Successfully reguessed {}/{} resource formats.'.format(success, count))
     click.echo(u'Failed to reguess {}/{} resource formats.'.format(failed, count))
+
+
+def cleanup_temp_blobs(older_than=24, dry_run=False, verbose=False):
+    """
+    Remove orphan temporary blobs from Azure storage.
+    
+    :param older_than: Only clean up blobs older than this many hours
+    :param dry_run: If True, show what would be deleted without actually deleting
+    :param verbose: Show detailed output
+    """
+    from datetime import datetime, timedelta, timezone
+    
+    cs = CloudStorage()
+    
+    if not cs.can_use_advanced_azure:
+        click.echo("This command is only available for Azure Blob Storage.")
+        return
+    
+    try:
+        svc_client = BlobServiceClient.from_connection_string(cs.connection_link)
+        container_client = svc_client.get_container_client(cs.container_name)
+    except Exception as e:
+        click.echo(f"Error connecting to Azure: {e}")
+        return
+    
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=older_than)
+    
+    # List all blobs in the temp directory
+    temp_blobs = []
+    total_size = 0
+    
+    try:
+        for blob in container_client.list_blobs(name_starts_with='temp/'):
+            # Check if blob is older than cutoff
+            if blob.last_modified and blob.last_modified < cutoff:
+                temp_blobs.append(blob)
+                total_size += blob.size or 0
+                if verbose:
+                    click.echo(f"  Found: {blob.name} ({blob.size} bytes, modified: {blob.last_modified})")
+    except Exception as e:
+        click.echo(f"Error listing blobs: {e}")
+        return
+    
+    if not temp_blobs:
+        click.echo(f"No temporary blobs older than {older_than} hours found.")
+        return
+    
+    # Show summary
+    size_mb = total_size / (1024 * 1024)
+    click.echo(f"Found {len(temp_blobs)} temporary blob(s) older than {older_than} hours ({size_mb:.2f} MB)")
+    
+    if dry_run:
+        click.echo("Dry run - no blobs will be deleted.")
+        for blob in temp_blobs:
+            click.echo(f"  Would delete: {blob.name}")
+        return
+    
+    # Delete blobs
+    deleted = 0
+    failed = 0
+    
+    for blob in temp_blobs:
+        try:
+            blob_client = container_client.get_blob_client(blob.name)
+            blob_client.delete_blob()
+            deleted += 1
+            if verbose:
+                click.echo(f"  Deleted: {blob.name}")
+        except Exception as e:
+            failed += 1
+            if verbose:
+                click.echo(f"  Failed to delete {blob.name}: {e}")
+    
+    click.echo(f"Deleted {deleted} blob(s). Failed: {failed}.")
+
+
+def cleanup_upload_status(older_than=24):
+    """
+    Clean up old entries from the azure_upload_status table.
+    
+    :param older_than: Only clean up entries older than this many hours
+    """
+    try:
+        from ckanext.cloudstorage.model import AzureUploadStatus
+        deleted = AzureUploadStatus.cleanup_old_entries(older_than)
+        click.echo(f"Cleaned up {deleted} old upload status entries.")
+    except Exception as e:
+        click.echo(f"Error cleaning up upload status: {e}")
+        # Table might not exist yet
+        if "does not exist" in str(e).lower() or "no such table" in str(e).lower():
+            click.echo("The azure_upload_status table may not exist yet. Run 'ckan cloudstorage initdb' first.")
