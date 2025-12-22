@@ -31,6 +31,45 @@ def create_tables():
     metadata.create_all(model.meta.engine)
 
 
+def ensure_tables_exist():
+    """
+    Create tables only if they don't exist.
+    Safe to call during plugin initialization.
+    Returns True if any tables were created, False if all already existed.
+    """
+    try:
+        from sqlalchemy import inspect
+        inspector = inspect(model.meta.engine)
+        existing_tables = inspector.get_table_names()
+        
+        tables_to_check = [
+            'cloudstorage_multipart_part',
+            'cloudstorage_multipart_upload', 
+            'cloudstorage_azure_upload_status'
+        ]
+        
+        missing_tables = [t for t in tables_to_check if t not in existing_tables]
+        
+        if missing_tables:
+            log.info(f"CloudStorage: Creating missing tables: {missing_tables}")
+            # create_all only creates tables that don't exist
+            metadata.create_all(model.meta.engine)
+            return True
+        else:
+            log.debug("CloudStorage: All required tables already exist")
+            return False
+            
+    except Exception as e:
+        log.warning(f"CloudStorage: Error checking/creating tables: {e}")
+        # Try to create anyway - create_all is safe if tables exist
+        try:
+            metadata.create_all(model.meta.engine)
+            return True
+        except Exception as e2:
+            log.error(f"CloudStorage: Failed to create tables: {e2}")
+            return False
+
+
 class MultipartPart(Base, DomainObject):
     __tablename__ = 'cloudstorage_multipart_part'
 

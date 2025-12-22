@@ -20,7 +20,8 @@ from ckanext.cloudstorage.storage import (
 )
 from ckanext.cloudstorage.model import (
     create_tables,
-    drop_tables
+    drop_tables,
+    ensure_tables_exist
 )
 
 from ckan.plugins.toolkit import h
@@ -33,10 +34,22 @@ class FakeFileStorage(cgi.FieldStorage):
         self.filename = filename
 
 
-def initdb():
-    drop_tables()
-    create_tables()
-    print("DB tables are reinitialized")
+def initdb(force=False):
+    """
+    Initialize database tables.
+    
+    :param force: If True, drop existing tables first (destructive!).
+                  If False, only create tables that don't exist.
+    """
+    if force:
+        drop_tables()
+        create_tables()
+        print("DB tables are reinitialized (forced)")
+    else:
+        if ensure_tables_exist():
+            print("DB tables created successfully")
+        else:
+            print("DB tables already exist")
 
 
 def fix_cors(domains):

@@ -15,9 +15,19 @@ def cloudstorage():
 
 
 @cloudstorage.command()
-def initdb():
-    """Reinitalize database tables."""
-    utils.initdb()
+@click.option(
+    '--force',
+    is_flag=True,
+    default=False,
+    help='Drop and recreate tables (destructive! will lose existing data).',
+)
+def initdb(force):
+    """Initialize database tables.
+    
+    By default, only creates tables that don't exist.
+    Use --force to drop and recreate all tables (WARNING: data loss!).
+    """
+    utils.initdb(force=force)
 
 
 @cloudstorage.command()

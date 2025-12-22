@@ -59,6 +59,14 @@ class CloudStoragePlugin(MixinPlugin, plugins.SingletonPlugin, plugins.toolkit.D
                         rk
                     )
                 )
+        
+        # Initialize database tables if they don't exist
+        try:
+            from ckanext.cloudstorage.model import ensure_tables_exist
+            if ensure_tables_exist():
+                log.info("CloudStorage: Database tables initialized")
+        except Exception as e:
+            log.warning(f"CloudStorage: Could not initialize database tables: {e}")
 
     def get_resource_uploader(self, data_dict):
         # Mantenemos ResourceCloudStorage para que CKAN siga resolviendo URLs y metadatos;
