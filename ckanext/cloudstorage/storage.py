@@ -298,13 +298,22 @@ class ResourceCloudStorage(CloudStorage):
         # Also check if azure_temp_path was saved in the resource dict (backup mechanism)
         saved_azure_temp_path = resource.get('_azure_temp_path')
         if saved_azure_temp_path and self.can_use_advanced_azure and not self.azure_temp_path and not self.azure_direct_complete:
-            # Only use this if we haven't already recovered from cache and it's not marked complete
-            self.azure_temp_path = saved_azure_temp_path
-            # Extract filename from saved path
-            path_parts = saved_azure_temp_path.split('/')
-            if len(path_parts) >= 1:
-                self.filename = munge.munge_filename(path_parts[-1])
-            log.info(f"ResourceCloudStorage init: Recovered azure_temp_path from resource dict: {saved_azure_temp_path}, filename={self.filename}")
+            # Check if this temp path was already moved in a previous request (multi-worker environment)
+            if saved_azure_temp_path in _azure_completed_moves:
+                # Already completed by another request, mark as complete
+                self.azure_direct_complete = True
+                path_parts = saved_azure_temp_path.split('/')
+                if len(path_parts) >= 1:
+                    self.filename = munge.munge_filename(path_parts[-1])
+                log.info(f"ResourceCloudStorage init: Temp path {saved_azure_temp_path} already moved (found in completed moves), marking as complete")
+            else:
+                # Only use this if we haven't already recovered from cache and it's not marked complete
+                self.azure_temp_path = saved_azure_temp_path
+                # Extract filename from saved path
+                path_parts = saved_azure_temp_path.split('/')
+                if len(path_parts) >= 1:
+                    self.filename = munge.munge_filename(path_parts[-1])
+                log.info(f"ResourceCloudStorage init: Recovered azure_temp_path from resource dict: {saved_azure_temp_path}, filename={self.filename}")
         
         # Log what we received (use INFO level to ensure visibility)
         log.info(f"ResourceCloudStorage init: azure_blob_path={azure_blob_path}, azure_upload={azure_upload}, can_use_advanced_azure={self.can_use_advanced_azure}")
@@ -462,19 +471,39 @@ class ResourceCloudStorage(CloudStorage):
                     try:
                         from azure.storage.blob import BlobSasPermissions, generate_blob_sas
                         
-                        # First, verify the source blob exists before attempting copy
+                        # OPTIMIZATION: First check if destination already exists (another worker may have completed the move)
+                        # This avoids unnecessary source blob checks and reduces warnings in multi-worker environments
+                        try:
+                            dest_blob.get_blob_properties()
+                            # Destination exists - move was already completed by another worker
+                            log.info(f"Azure Direct Upload: Destination blob {final_path} already exists (moved by another worker), skipping")
+                            _azure_completed_moves[self.azure_temp_path] = final_path
+                            # Try to clean up temp blob if it still exists
+                            try:
+                                source_blob.delete_blob()
+                                log.info(f"Azure Direct Upload: Cleaned up orphan temp blob {self.azure_temp_path}")
+                            except:
+                                pass  # Temp blob already deleted, that's fine
+                            # Clean up temp fields
+                            if '_azure_temp_path' in self.resource:
+                                del self.resource['_azure_temp_path']
+                            saved_cache_key = self.resource.get('_azure_cache_key')
+                            if saved_cache_key and saved_cache_key in _azure_upload_cache:
+                                del _azure_upload_cache[saved_cache_key]
+                            if '_azure_cache_key' in self.resource:
+                                del self.resource['_azure_cache_key']
+                            return 0
+                        except Exception:
+                            # Destination doesn't exist, we need to move the blob
+                            pass
+                        
+                        # Now verify the source blob exists before attempting copy
                         try:
                             source_blob.get_blob_properties()
                         except Exception as blob_check_error:
-                            log.warning(f"Azure Direct Upload: Source blob {self.azure_temp_path} does not exist (may have been moved already): {blob_check_error}")
-                            # Mark as completed anyway and clean up
+                            log.warning(f"Azure Direct Upload: Source blob {self.azure_temp_path} does not exist and destination doesn't exist either - upload may have failed")
+                            # Mark as completed anyway and clean up to prevent infinite retries
                             _azure_completed_moves[self.azure_temp_path] = final_path
-                            # Check if the destination blob exists (from a previous successful move)
-                            try:
-                                dest_blob.get_blob_properties()
-                                log.info(f"Azure Direct Upload: Destination blob {final_path} already exists, treating as success")
-                            except:
-                                log.warning(f"Azure Direct Upload: Neither source nor destination blob exists - upload may have failed previously")
                             # Clean up temp fields
                             if '_azure_temp_path' in self.resource:
                                 del self.resource['_azure_temp_path']
