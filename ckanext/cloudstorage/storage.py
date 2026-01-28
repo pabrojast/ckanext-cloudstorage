@@ -851,8 +851,12 @@ class ResourceCloudStorage(CloudStorage):
 
             return s3_connection.generate_url_sigv4(**generate_url_params)
 
-        # Find the object for the given key.
-        obj = self.container.get_object(path)
+        # Find the object for the given key. Some drivers (eg Azure via
+        # libcloud) raise instead of returning None for missing objects.
+        try:
+            obj = self.container.get_object(path)
+        except ObjectDoesNotExistError:
+            return
         if obj is None:
             return
 
