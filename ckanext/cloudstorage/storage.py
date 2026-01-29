@@ -793,6 +793,11 @@ class ResourceCloudStorage(CloudStorage):
 
         :returns: Externally accessible URL or None.
         """
+        def _ensure_https(url):
+            if url and url.startswith('http://') and 'blob.core.windows.net' in url:
+                return 'https://' + url[len('http://'):]
+            return url
+
         # Find the key the file *should* be stored at.
         path = self.path_from_filename(rid, filename)
         # If advanced azure features are enabled, generate a temporary
@@ -829,7 +834,7 @@ class ResourceCloudStorage(CloudStorage):
                 sas_token
             )
 
-            return url
+            return _ensure_https(url)
 
         elif self.can_use_advanced_aws and self.use_secure_urls:
 
@@ -876,7 +881,7 @@ class ResourceCloudStorage(CloudStorage):
             # This extra 'url' property isn't documented anywhere, sadly.
             # See azure_blobs.py:_xml_to_object for more.
             elif 'url' in obj.extra:
-                return obj.extra['url']
+                return _ensure_https(obj.extra['url'])
             raise
 
     @property
