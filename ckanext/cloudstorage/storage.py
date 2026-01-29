@@ -867,7 +867,7 @@ class ResourceCloudStorage(CloudStorage):
 
         # Not supported by all providers!
         try:
-            return self.driver.get_object_cdn_url(obj)
+            return _ensure_https(self.driver.get_object_cdn_url(obj))
         except NotImplementedError:
             if 'S3' in self.driver_name:
                 from urllib.parse import urljoin
