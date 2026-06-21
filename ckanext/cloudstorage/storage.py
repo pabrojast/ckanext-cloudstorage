@@ -810,12 +810,20 @@ class ResourceCloudStorage(CloudStorage):
             blob_client = container_client.get_blob_client(path)
             permissions = BlobSasPermissions(read=True)
             token_expires = datetime.utcnow() + timedelta(hours=1)
-            sas_token = generate_blob_sas(account_name=blob_client.account_name,
-                                      account_key=blob_client.credential.account_key,
-                                      container_name=blob_client.container_name,
-                                      blob_name=blob_client.blob_name,
-                                      permission=permissions,
-                                      expiry=token_expires)
+            sas_params = dict(account_name=blob_client.account_name,
+                              account_key=blob_client.credential.account_key,
+                              container_name=blob_client.container_name,
+                              blob_name=blob_client.blob_name,
+                              permission=permissions,
+                              expiry=token_expires)
+            # Force the response Content-Type (SAS 'rsct' param) so the browser
+            # receives e.g. image/png instead of application/octet-stream and can
+            # render images inline in image_view. This fixes already-uploaded blobs
+            # without re-uploading them. content_type is guessed and passed in by
+            # views/resource_download.py.
+            if content_type:
+                sas_params['content_type'] = content_type
+            sas_token = generate_blob_sas(**sas_params)
 
             blob_client = BlobClient(svc_client.url,
                                     container_name=blob_client.container_name,
