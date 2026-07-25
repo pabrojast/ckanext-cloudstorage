@@ -864,6 +864,29 @@ class ResourceCloudStorage(CloudStorage):
 
             return s3_connection.generate_url_sigv4(**generate_url_params)
 
+        # Everything below this point returns an UNSIGNED, publicly guessable
+        # URL. When the site asked for signed URLs, silently degrading to one
+        # is a security failure, not a fallback: it hands out a link that
+        # bypasses CKAN's authorization entirely and keeps working forever.
+        # The usual trigger is `can_use_advanced_azure` going False because the
+        # azure SDK failed to import, which is a deployment fault worth failing
+        # loudly on.
+        if self.use_secure_urls and p.toolkit.asbool(
+                config.get('ckanext.cloudstorage.require_secure_urls', True)):
+            raise RuntimeError(
+                'ckanext-cloudstorage: refusing to hand out an unsigned public '
+                'URL for {path!r} (driver={driver}, advanced_azure={azure}, '
+                'advanced_aws={aws}). use_secure_urls is on, so this would '
+                'bypass CKAN authorization. Fix the cloud SDK installation, or '
+                'set ckanext.cloudstorage.require_secure_urls = false to allow '
+                'the unsigned fallback.'.format(
+                    path=path,
+                    driver=self.driver_name,
+                    azure=self.can_use_advanced_azure,
+                    aws=self.can_use_advanced_aws,
+                )
+            )
+
         # Find the object for the given key. Some drivers (eg Azure via
         # libcloud) raise instead of returning None for missing objects.
         try:

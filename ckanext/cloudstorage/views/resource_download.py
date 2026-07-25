@@ -38,7 +38,11 @@ def resource_download(id, resource_id, filename= None):
         url = resource.get('url')
         if not url:
             base.abort(404, _('No download is available'))
-        h.redirect_to(url)
+        # Link-type resources point somewhere we do not control, so the
+        # redirect cannot be signed. Without this `return` execution fell
+        # through into the uploader path below and looked up a blob that does
+        # not exist for this resource.
+        return h.redirect_to(url)
 
     if filename is None:
         # No filename was provided so we'll try to get one from the url.
